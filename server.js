@@ -70,8 +70,6 @@ async function callGroq(systemPrompt, userPrompt, maxTokens = 2000) {
 
 // ============================================================
 // LOCAL STYLE DNA — hard metrics extracted from raw text
-// These concrete numbers get injected into every Groq prompt
-// so the model has a real mathematical fingerprint, not just vibes
 // ============================================================
 function extractStyleDNA(samples) {
   const allText = samples.map(s => s.text).join(" ");
@@ -79,7 +77,6 @@ function extractStyleDNA(samples) {
   const words = allText.toLowerCase().match(/\b[a-z']+\b/g) || [];
   const sentenceCount = Math.max(sentences.length, 1);
 
-  // Sentence length
   const lengths = sentences.map(s => s.split(/\s+/).length);
   const avgLen = lengths.length ? Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length) : 15;
   const shortCount = lengths.filter(l => l <= 8).length;
@@ -89,12 +86,10 @@ function extractStyleDNA(samples) {
     longCount > shortCount * 2 ? "sprawling and detailed — often 25+ words" :
     "varied — mixes short punchy lines with longer flowing ones";
 
-  // Vocabulary
   const uniqueWords = new Set(words);
   const vocabRichness = words.length ? Math.round((uniqueWords.size / words.length) * 100) : 50;
   const avgWordLen = words.length ? Math.round(words.reduce((a, w) => a + w.length, 0) / words.length) : 5;
 
-  // Contractions
   const contractionMatches = (allText.match(/\b(don't|doesn't|can't|won't|it's|i'm|i've|i'd|i'll|we're|we've|they're|you're|you've|isn't|aren't|wasn't|weren't|hasn't|haven't|hadn't|wouldn't|shouldn't|couldn't|that's|there's|here's|let's|who's|what's)\b/gi) || []).length;
   const contractionRate = words.length ? Math.round((contractionMatches / words.length) * 100) : 0;
   const contractionLabel =
@@ -102,7 +97,6 @@ function extractStyleDNA(samples) {
     contractionRate > 3 ? "moderate — semi-casual" :
     "rare — leans more formal";
 
-  // Punctuation
   const exclamations = (allText.match(/!/g) || []).length;
   const questions = (allText.match(/\?/g) || []).length;
   const ellipses = (allText.match(/\.\.\./g) || []).length;
@@ -116,23 +110,19 @@ function extractStyleDNA(samples) {
     commas / sentenceCount > 2 ? "comma-heavy — stacks clauses" : null,
   ].filter(Boolean).join("; ") || "standard punctuation — no strong habits";
 
-  // Formality
   const formalWords = (allText.match(/\b(therefore|moreover|furthermore|subsequently|nevertheless|accordingly|consequently|albeit|notwithstanding|utilize|facilitate|implement|leverage|regarding|pertaining)\b/gi) || []).length;
   const casualWords = (allText.match(/\b(kinda|sorta|gonna|wanna|gotta|tbh|ngl|lowkey|highkey|literally|basically|honestly|like|just|really|super|totally|pretty|stuff|yeah|yep|nope|okay)\b/gi) || []).length;
   let formalityScore = 50 + (formalWords * 5) - (casualWords * 3) - (contractionRate * 2);
   formalityScore = Math.max(0, Math.min(100, formalityScore));
 
-  // Fragment rate
   const fragments = sentences.filter(s => s.split(/\s+/).length <= 4).length;
   const fragmentRate = Math.round((fragments / sentenceCount) * 100);
 
-  // Top signature words (skip stopwords)
   const stopwords = new Set(["the","a","an","and","or","but","in","on","at","to","for","of","with","is","are","was","were","be","been","being","have","has","had","do","does","did","will","would","could","should","may","might","shall","can","i","you","he","she","it","we","they","me","him","her","us","them","my","your","his","its","our","their","this","that","these","those","what","which","who","when","where","why","how","all","each","every","not","no","so","if","as","by","from","up","about","than","then","just","also","there","here","very","more","some","any","only","out","into","get","got","go","going"]);
   const wordFreq = {};
   words.forEach(w => { if (!stopwords.has(w) && w.length > 2) wordFreq[w] = (wordFreq[w] || 0) + 1; });
   const topWords = Object.entries(wordFreq).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([w]) => w);
 
-  // Top recurring phrases (2–3 word combos)
   const phraseFreq = {};
   for (let i = 0; i < words.length - 2; i++) {
     const [w1, w2, w3] = [words[i], words[i+1], words[i+2]];
@@ -161,9 +151,6 @@ function extractStyleDNA(samples) {
 
 // ============================================================
 // THE CORE REWRITE SYSTEM PROMPT
-// This is the heart of the extension. It tells Groq exactly
-// how to analyze a writing fingerprint and then imitate it.
-// The 3-step framework is non-negotiable and runs every time.
 // ============================================================
 function buildSystemPrompt(dna, rawBlueprint, humanizeMode = false) {
 
@@ -180,7 +167,7 @@ MEASURED WRITING FINGERPRINT (extracted mathematically from real samples):
 - Dashes: ${dna.dashesPerSentence} per sentence on average
 - Vocabulary richness: ${dna.vocabRichness}% unique words (higher = more varied vocabulary)
 - Average word length: ${dna.avgWordLen} characters
-- Signature words (characteristic to this writer — use naturally when they fit):
+- Signature words (use naturally when they fit):
   ${dna.topWords.length ? dna.topWords.join(", ") : "none strongly detected"}
 - Recurring phrase patterns:
   ${dna.topPhrases.length ? dna.topPhrases.join(" | ") : "none strongly detected"}
@@ -227,11 +214,11 @@ STEP 2: BUILD THE STYLE MODEL
 ============================================================
 From your analysis, build an internal writing model with these exact components:
 
-- Sentence rhythm rules: how long are sentences typically, and how do they vary? Do short and long alternate?
+- Sentence rhythm rules: how long are sentences typically, and how do they vary?
 - Tone rules: what does this voice feel like? What emotional register does it live in?
 - Structure rules: how are paragraphs typically built? Short punchy blocks or longer developed ones?
 - Word choice rules: what vocabulary level fits? What kind of words would this person actually use?
-- DO NOT DO list: what would this writer NEVER say? What phrasing would feel completely wrong? What AI phrases are banned for this voice specifically?
+- DO NOT DO list: what would this writer NEVER say? What AI phrases are banned for this voice?
 
 Every sentence you write must pass through this model before it is output.
 
@@ -240,15 +227,14 @@ STEP 3: MATCH THE STYLE — REWRITE THE TEXT
 ============================================================
 Now rewrite the given text using your style model:
 
-- Prioritize matching rhythm and flow ABOVE everything else — this matters more than exact vocabulary
-- Preserve every fact and piece of meaning from the original — do not add or remove any information
+- Prioritize matching rhythm and flow ABOVE everything else
+- Preserve every fact and piece of meaning from the original — do not add or remove anything
 - Avoid ALL generic AI phrasing — write the way this specific human actually thinks out loud
-- Keep the same thinking patterns as the original writer — if they build to a point, build to it; if they front-load, front-load
+- Keep the same thinking patterns as the original writer
 - Do not copy sentences directly from the samples — generate fresh sentences that fit the fingerprint
-- Make it feel like the same person sat down and typed this themselves, naturally, without thinking about style
+- Make it feel like the same person sat down and typed this themselves
 
 IMPORTANT RULES — NON-NEGOTIABLE:
-- Do not copy sentences directly from the writing samples
 - Focus on imitating structure, rhythm, and flow — not just swapping vocabulary
 - If uncertain about anything, default to matching sentence rhythm and tone first
 - The output must feel like the same person is thinking out loud — not a robot doing an impression
@@ -256,11 +242,13 @@ IMPORTANT RULES — NON-NEGOTIABLE:
 ============================================================
 ABSOLUTE RULES — NEVER BREAK THESE
 ============================================================
-- Output ONLY the rewritten text. No intro. No label. No "Here is the rewrite:". Nothing before or after the text itself.
+- Output ONLY the rewritten text. No intro. No label. No "Here is the rewrite:". Nothing before or after.
 - Never use these phrases — they are instant AI tells: "Furthermore", "Moreover", "Additionally", "It is worth noting", "In conclusion", "To summarize", "utilize", "leverage", "delve into", "it's important to note", "I hope this helps", "Certainly!", "Absolutely!", "Great question!", "As an AI"
-- Do not make the writing cleaner or more polished than the original writer actually is
+- CRITICAL — PRESERVE INTELLIGENCE AND GRADE LEVEL: The original content has a specific intellectual depth and sophistication. Preserve it completely. Matching someone's voice means changing HOW they say something — never HOW SMART it sounds. If the original is A-grade writing, the rewrite must also be A-grade. Do not simplify ideas, water down arguments, or reduce vocabulary complexity. A smart rewrite in someone's casual voice is still smart.
+- Do not make the writing sound dumber, simpler, or less developed than the original
 - Do not over-explain. Do not hedge. Match the writer's actual confidence and energy level.
 - The result must be indistinguishable from something this person typed themselves
+- You are changing HOW they say it, not WHAT they say or HOW SMART it sounds
 ${humanizeBlock}
 
 ============================================================
@@ -270,7 +258,7 @@ ${rawBlueprint || "No qualitative blueprint available — rely on the measured f
 }
 
 // ============================================================
-// GET /health — quick uptime check
+// GET /health
 // ============================================================
 app.get("/health", (req, res) => {
   res.json({ status: "ok", model: MODEL, groqKeySet: !!GROQ_API_KEY });
@@ -278,8 +266,6 @@ app.get("/health", (req, res) => {
 
 // ============================================================
 // POST /analyze
-// Accepts: { samples: [{ label, text }] }
-// Returns: { blueprint: "<json string with dna + rawBlueprint>" }
 // ============================================================
 app.post("/analyze", async (req, res) => {
   try {
@@ -288,10 +274,8 @@ app.post("/analyze", async (req, res) => {
       return res.status(400).json({ error: "No samples provided" });
     }
 
-    // Step A: Extract hard metrics locally (instant, no API cost)
     const dna = extractStyleDNA(samples);
 
-    // Step B: Send samples to Groq for deep qualitative analysis
     const samplesText = samples
       .map((s, i) => `--- Sample ${i + 1}: ${s.label || "Untitled"} ---\n${s.text}`)
       .join("\n\n");
@@ -309,29 +293,27 @@ TONE PATTERNS:
 How does their tone shift across the samples? Do they use sarcasm, irony, or humor to make a point? Quote a specific example.
 
 SENTENCE RHYTHM QUIRKS:
-Go beyond length. Do they use fragments for punch? Answer their own rhetorical questions? Repeat a word for emphasis? Use one-word sentences? Quote examples from the samples.
+Go beyond length. Do they use fragments for punch? Answer their own rhetorical questions? Repeat a word for emphasis? Quote examples.
 
 PARAGRAPH & FLOW STYLE:
-Do they frontload the main point or build toward it? Do they write in short punchy blocks or long flowing ones? How do they move between ideas?
+Do they frontload the main point or build toward it? Short punchy blocks or long flowing ones? How do they move between ideas?
 
 PUNCTUATION PERSONALITY:
-What does their punctuation say about them? What do they use heavily? What is clearly absent? Be specific.
+What does their punctuation say about them? What do they use heavily? What is clearly absent?
 
 VOCABULARY FINGERPRINT:
-What words and phrases are distinctly theirs — not common filler, but real signature expressions? Quote them directly from the samples.
+What words and phrases are distinctly theirs — not common filler, but real signature expressions? Quote them directly.
 
 THINGS THEY NEVER DO:
-Based on all the samples, what writing habits are clearly absent? What would sound completely wrong coming from this person?
+What writing habits are clearly absent? What would sound completely wrong coming from this person?
 
 PERSONALITY TRAITS:
-List 5–8 single words that describe this writer's voice. Example: direct, sarcastic, warm, impatient, self-aware.
+List 5–8 single words that describe this writer's voice.
 
 CLONING INSTRUCTIONS:
-Write 2–3 paragraphs addressed directly to an AI that will imitate this person. Use second person: "When writing as this person, you should..." Cover their overall approach, their relationship with the reader, their energy level, and the single most important thing to get right about their voice.`;
+Write 2–3 paragraphs in second person ("When writing as this person...") covering their overall approach, relationship with the reader, energy level, and the single most important thing to get right about their voice. Also note their intellectual level and sophistication — if they write at an advanced level, flag that so the rewriter never dumbs it down.`;
 
     const rawBlueprint = await callGroq(systemPrompt, userPrompt, 1500);
-
-    // Package hard metrics + qualitative analysis together
     const blueprint = JSON.stringify({ dna, rawBlueprint });
 
     res.json({ blueprint });
@@ -344,8 +326,6 @@ Write 2–3 paragraphs addressed directly to an AI that will imitate this person
 
 // ============================================================
 // POST /rewrite
-// Accepts: { text, blueprint }
-// Returns: { rewritten }
 // ============================================================
 app.post("/rewrite", async (req, res) => {
   try {
@@ -354,7 +334,6 @@ app.post("/rewrite", async (req, res) => {
       return res.status(400).json({ error: "Missing text or blueprint" });
     }
 
-    // Parse blueprint — supports new JSON format and old string format
     let dna = null;
     let rawBlueprint = blueprint;
     try {
@@ -363,13 +342,12 @@ app.post("/rewrite", async (req, res) => {
         dna = parsed.dna;
         rawBlueprint = parsed.rawBlueprint;
       }
-    } catch (e) { /* old string format — use as-is */ }
+    } catch (e) {}
 
     const systemPrompt = buildSystemPrompt(dna, rawBlueprint, false);
-    const userPrompt = `Rewrite this in this person's exact voice. Keep every fact and piece of meaning. Output ONLY the rewritten text — nothing else:\n\n${text}`;
+    const userPrompt = `Rewrite this in this person's exact voice. Keep every fact and piece of meaning. Preserve the full intellectual depth and sophistication of the original. Output ONLY the rewritten text — nothing else:\n\n${text}`;
 
     const rewritten = await callGroq(systemPrompt, userPrompt, 1500);
-
     res.json({ rewritten });
 
   } catch (err) {
@@ -380,9 +358,6 @@ app.post("/rewrite", async (req, res) => {
 
 // ============================================================
 // POST /humanize
-// Same as /rewrite but pushes harder on human messiness
-// Accepts: { text, blueprint }
-// Returns: { rewritten }
 // ============================================================
 app.post("/humanize", async (req, res) => {
   try {
@@ -399,13 +374,12 @@ app.post("/humanize", async (req, res) => {
         dna = parsed.dna;
         rawBlueprint = parsed.rawBlueprint;
       }
-    } catch (e) { /* old string format */ }
+    } catch (e) {}
 
     const systemPrompt = buildSystemPrompt(dna, rawBlueprint, true);
-    const userPrompt = `This text needs to sound more human and less AI-generated. Rewrite it with more natural messiness while keeping this person's exact voice. Output ONLY the rewritten text:\n\n${text}`;
+    const userPrompt = `This text needs to sound more human and less AI-generated. Rewrite it with more natural messiness while keeping this person's exact voice and full intellectual depth. Output ONLY the rewritten text:\n\n${text}`;
 
     const rewritten = await callGroq(systemPrompt, userPrompt, 1500);
-
     res.json({ rewritten });
 
   } catch (err) {
