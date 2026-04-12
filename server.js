@@ -128,9 +128,31 @@ function extractStyleDNA(samples) {
 
   // Top signature words (skip stopwords)
   const stopwords = new Set(["the","a","an","and","or","but","in","on","at","to","for","of","with","is","are","was","were","be","been","being","have","has","had","do","does","did","will","would","could","should","may","might","shall","can","i","you","he","she","it","we","they","me","him","her","us","them","my","your","his","its","our","their","this","that","these","those","what","which","who","when","where","why","how","all","each","every","not","no","so","if","as","by","from","up","about","than","then","just","also","there","here","very","more","some","any","only","out","into","get","got","go","going"]);
+  // Build per-sample word sets to identify cross-sample style words
+  // Words that only appear in ONE sample are likely topic-specific (e.g. "grandpa")
+  // Words that appear across MULTIPLE samples are true style fingerprint words
+  const sampleWordSets = samples.map(s => {
+    const sWords = (s.text.toLowerCase().match(/\b[a-z']+\b/g) || []);
+    return new Set(sWords);
+  });
+
   const wordFreq = {};
   words.forEach(w => { if (!stopwords.has(w) && w.length > 2) wordFreq[w] = (wordFreq[w] || 0) + 1; });
-  const topWords = Object.entries(wordFreq).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([w]) => w);
+
+  // Count how many samples each word appears in
+  const wordSampleCount = {};
+  Object.keys(wordFreq).forEach(w => {
+    wordSampleCount[w] = sampleWordSets.filter(s => s.has(w)).length;
+  });
+
+  // Only keep words that appear in at least 2 samples (true style words, not topic words)
+  // Exception: if there's only 1 sample, fall back to frequency-based selection
+  const minSamples = samples.length > 1 ? 2 : 1;
+  const topWords = Object.entries(wordFreq)
+    .filter(([w]) => wordSampleCount[w] >= minSamples)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([w]) => w);
 
   // Top recurring phrases (2–3 word combos)
   const phraseFreq = {};
@@ -180,10 +202,11 @@ MEASURED WRITING FINGERPRINT (extracted mathematically from real samples):
 - Dashes: ${dna.dashesPerSentence} per sentence on average
 - Vocabulary richness: ${dna.vocabRichness}% unique words (higher = more varied vocabulary)
 - Average word length: ${dna.avgWordLen} characters
-- Signature words (characteristic to this writer — use naturally when they fit):
+- Signature STYLE words (these reflect HOW this person writes — only use ones that are stylistic words like connectors, filler words, or expression words. NEVER use topic-specific nouns, names, or subject matter from the samples in unrelated writing — e.g. if samples mention "grandpa", "soccer", "school" those are topic words not style words, ignore them):
   ${dna.topWords.length ? dna.topWords.join(", ") : "none strongly detected"}
-- Recurring phrase patterns:
+- Recurring phrase patterns (mirror the STRUCTURE of these patterns only — not the specific subject matter):
   ${dna.topPhrases.length ? dna.topPhrases.join(" | ") : "none strongly detected"}
+- CRITICAL: The samples were written about specific topics. Do NOT carry over any topic-specific nouns, names, people, or subject matter from those samples into the new writing. Only carry over HOW the person writes, never WHAT the samples were about.
 ` : "";
 
   const humanizeBlock = humanizeMode ? `
