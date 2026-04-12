@@ -209,43 +209,49 @@ Follow this exact three-step process internally before writing a single word of 
 ============================================================
 STEP 1: ANALYZE THE WRITING FINGERPRINT
 ============================================================
-Study the samples and the measured fingerprint above. Identify:
+Before writing a single word, study the measured fingerprint and samples above. Identify ALL of these:
 
-- Average sentence length and how much it varies (short punchy lines vs. longer flowing ones)
-- Rhythm — is it choppy, smooth, reflective, fast-paced, or something else entirely?
-- Tone — casual, formal, emotional, analytical, confident, uncertain, or a mix?
-- Structure habits — how does this writer introduce an idea, develop it, and wrap it up?
-- Vocabulary level — simple and direct, advanced, repetitive, or richly varied?
-- Repeated patterns — any phrases, transitions, or sentence starters they keep returning to?
-- Thinking style — do they think linearly, in layers, through stories, through explanation?
-- Punctuation habits — heavy on commas? Fond of fragments? Run-ons? Dashes everywhere?
+- Average sentence length: are they short (under 10 words), medium, long (25+), or mixed?
+- Rhythm: is it choppy and punchy, smooth and flowing, reflective and slow, fast-paced, or something else?
+- Tone: casual, formal, emotional, analytical, confident, uncertain — or a specific combination?
+- Structure habits: how does this writer introduce an idea? Do they frontload the point or build to it? How do they conclude?
+- Vocabulary level: simple and direct, advanced and technical, repetitive, or richly varied?
+- Repeated patterns: any phrases, transitions, or sentence starters they keep returning to?
+- Thinking style: do they think linearly, in layers, through storytelling, through explanation, or by asking questions?
+- Punctuation habits: heavy commas? Fragments? Run-ons? Dashes? Ellipses? What is completely absent?
 
-Combine all of this into a clear internal style profile before moving on.
+Summarize all of this into a clear internal style profile. Do not skip this step.
 
 ============================================================
 STEP 2: BUILD THE STYLE MODEL
 ============================================================
-From that analysis, construct an internal writing model with these rules:
+From your analysis, build an internal writing model with these exact components:
 
-- Sentence rhythm rules: how long are their sentences, and how do they vary?
-- Tone rules: what does their voice feel like to read?
-- Structure rules: how do they typically build a paragraph?
-- Word choice rules: what vocabulary level and register fits them?
-- DO NOT DO list: what would this writer never say? What AI phrases would feel completely wrong in their voice?
+- Sentence rhythm rules: how long are sentences typically, and how do they vary? Do short and long alternate?
+- Tone rules: what does this voice feel like? What emotional register does it live in?
+- Structure rules: how are paragraphs typically built? Short punchy blocks or longer developed ones?
+- Word choice rules: what vocabulary level fits? What kind of words would this person actually use?
+- DO NOT DO list: what would this writer NEVER say? What phrasing would feel completely wrong? What AI phrases are banned for this voice specifically?
 
-Hold this model in mind. Every sentence you write must pass through it.
+Every sentence you write must pass through this model before it is output.
 
 ============================================================
-STEP 3: REWRITE IN THEIR EXACT STYLE
+STEP 3: MATCH THE STYLE — REWRITE THE TEXT
 ============================================================
-Now rewrite the given text using the style model:
+Now rewrite the given text using your style model:
 
-- Match rhythm and flow above everything else — this is more important than vocabulary
-- Preserve every fact and piece of meaning from the original — do not add or remove information
-- Avoid all generic AI phrasing — write the way this specific human thinks out loud
-- Keep the same thinking patterns as the original writer
-- Do not copy sentences directly from the samples — generate new sentences that fit the fingerprint
-- Make it feel like the same person sat down and just wrote this
+- Prioritize matching rhythm and flow ABOVE everything else — this matters more than exact vocabulary
+- Preserve every fact and piece of meaning from the original — do not add or remove any information
+- Avoid ALL generic AI phrasing — write the way this specific human actually thinks out loud
+- Keep the same thinking patterns as the original writer — if they build to a point, build to it; if they front-load, front-load
+- Do not copy sentences directly from the samples — generate fresh sentences that fit the fingerprint
+- Make it feel like the same person sat down and typed this themselves, naturally, without thinking about style
+
+IMPORTANT RULES — NON-NEGOTIABLE:
+- Do not copy sentences directly from the writing samples
+- Focus on imitating structure, rhythm, and flow — not just swapping vocabulary
+- If uncertain about anything, default to matching sentence rhythm and tone first
+- The output must feel like the same person is thinking out loud — not a robot doing an impression
 
 ============================================================
 ABSOLUTE RULES — NEVER BREAK THESE
