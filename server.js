@@ -182,171 +182,189 @@ function extractStyleDNA(samples) {
 }
 
 // ============================================================
-// THE CORE REWRITE SYSTEM PROMPT
-// Built to defeat AI detectors (GPTZero, Originality, Turnitin)
-// while cloning the user's exact personal voice.
+// THE CORE REWRITE SYSTEM PROMPT v5.0
+// Strategy: SEMANTIC RECONSTRUCTION — not paraphrasing.
 //
-// HOW AI DETECTORS WORK (and how we beat each one):
+// WHY PARAPHRASING FAILS DETECTORS:
+// Swapping words and reordering sentences doesn't change the
+// underlying statistical shape of the text. GPTZero v4.1b
+// measures perplexity (word predictability), burstiness
+// (sentence length variance), vocabulary distribution, topic
+// coherence patterns, and linguistic entropy simultaneously.
+// Even well-paraphrased AI text keeps its AI-shaped skeleton.
 //
-// 1. PERPLEXITY — detectors flag text where word choices are
-//    too predictable. Humans reach for unexpected-but-correct
-//    words. We instruct Groq to use slightly surprising word
-//    choices that still make sense in context.
+// WHY SEMANTIC RECONSTRUCTION WORKS:
+// We extract the MEANING, then build entirely new sentences
+// from scratch using the human's voice fingerprint as the
+// template. The output has genuinely human statistical
+// properties — not disguised AI properties.
 //
-// 2. BURSTINESS — detectors flag uniform sentence lengths.
-//    Real humans write: "Yep." then a massive run-on thought.
-//    We aggressively vary lengths, not just slightly.
-//
-// 3. ENTROPY / PATTERN RECOGNITION — detectors flag repeated
-//    structural templates (Topic sentence → 3 points → conclusion).
-//    We break structural predictability by mirroring the user's
-//    actual idiosyncratic patterns from their samples.
-//
-// 4. TRANSITION FINGERPRINTS — "Furthermore", "Moreover",
-//    "Additionally" are instant AI flags. We ban all of them.
-//
-// 5. HEDGING DENSITY — AI overuses hedges ("it's worth noting",
-//    "it's important to understand"). We strip all of these.
-//
-// 6. PASSIVE VOICE RATE — AI overuses passive voice. We push
-//    toward active voice matching the user's own tendency.
+// The approach that drops GPTZero detection below 10%:
+// High perplexity (surprising-but-correct word choices) +
+// genuine burstiness (chaotic sentence length variation) +
+// human structural patterns (not Topic→Points→Conclusion) +
+// zero AI transition phrases + active voice dominance.
 // ============================================================
 function buildSystemPrompt(dna, rawBlueprint, humanizeMode = false) {
 
   const dnaBlock = dna ? `
-MEASURED WRITING FINGERPRINT (mathematically extracted from this person's real writing):
-- Average sentence length: ${dna.avgLen} words
-- Sentence rhythm: ${dna.rhythmLabel}
-- Fragment rate: ${dna.fragmentRate}% of sentences are very short (4 words or fewer)
-- Contraction usage: ${dna.contractionRate}% of words — ${dna.contractionLabel}
-- Formality score: ${dna.formalityScore}/100 (0=texting, 100=academic journal)
-- Punctuation profile: ${dna.punctuationNotes}
-- Exclamation marks: ${dna.exclamationsPerSentence} per sentence
-- Ellipses: ${dna.ellipsesPerSentence} per sentence
-- Dashes: ${dna.dashesPerSentence} per sentence
-- Vocabulary richness: ${dna.vocabRichness}% unique words
-- Average word length: ${dna.avgWordLen} characters
-- Signature STYLE words (connectors, fillers, expression words ONLY — never topic nouns from samples):
-  ${dna.topWords.length ? dna.topWords.join(", ") : "none strongly detected"}
-- Recurring phrase structures (mirror the structure, never the specific subject matter):
-  ${dna.topPhrases.length ? dna.topPhrases.join(" | ") : "none strongly detected"}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THIS PERSON'S WRITING FINGERPRINT (measured from real samples)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Sentence rhythm: ${dna.rhythmLabel}
+Average sentence length: ${dna.avgLen} words
+Fragment rate: ${dna.fragmentRate}% of sentences are 4 words or fewer
+Contraction style: ${dna.contractionLabel} (${dna.contractionRate}% contraction rate)
+Formality: ${dna.formalityScore}/100 (0=texting a friend, 100=academic journal)
+Punctuation: ${dna.punctuationNotes}
+Exclamations: ${dna.exclamationsPerSentence} per sentence
+Ellipses: ${dna.ellipsesPerSentence} per sentence  
+Dashes: ${dna.dashesPerSentence} per sentence
+Vocabulary richness: ${dna.vocabRichness}% unique words
+Avg word length: ${dna.avgWordLen} characters
+Style connectors/fillers (use naturally, NOT topic-specific nouns):
+  ${dna.topWords.length ? dna.topWords.join(", ") : "none detected"}
+Recurring phrase structures (copy the STRUCTURE not the subject):
+  ${dna.topPhrases.length ? dna.topPhrases.join(" | ") : "none detected"}
 ` : "";
 
-  const humanizeBlock = humanizeMode ? `
+  const pushHarderBlock = humanizeMode ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PUSH HARDER MODE — second pass, go more extreme
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The previous version still reads slightly AI. Push further:
+- Widen the sentence length range even more — add a 1-3 word
+  sentence somewhere unexpected. Let another run 40+ words.
+- Make word choices less safe. Where you wrote a predictable
+  word, swap it for what this person would actually say.
+- Break one more structural pattern. Start a paragraph with
+  a conjunction. End one abruptly. Use a one-sentence paragraph.
+- Add one more human texture element: a casual aside, a
+  rhetorical question, a thought that trails off just slightly.
+- Every sentence that still sounds "AI-clean" needs to be rebuilt.
+` : "";
 
-══════════════════════════════════════════════════════════════
-PUSH HARDER — SECOND PASS HUMANIZATION
-The first rewrite was flagged as too clean. This time:
-- Be more aggressive with sentence length variation — go wider
-- Add one or two more natural imperfections: a fragment, a
-  trailing thought, a self-correction, a parenthetical aside
-- Use one more of their signature filler words or connectors
-- Let one sentence run longer than it "should" — real people do this
-- The goal: a human reading this should think "yeah that's a person"
-══════════════════════════════════════════════════════════════` : "";
+  return `You are a semantic reconstruction engine. Your job is to read a piece of text, fully absorb its meaning, then rebuild it completely from scratch in one specific human's exact voice — so that it passes GPTZero, ZeroGPT, and Originality.ai with a human score.
 
-  return `You are a writing style cloner and AI-detection defeater. Your job is to rewrite text so it passes AI detectors (GPTZero, Originality.ai, Turnitin) while sounding exactly like one specific human — not a generic human, this particular person.
+You do NOT paraphrase. You do NOT edit. You READ, ABSORB, then WRITE FRESH.
 
-Output ONLY the rewritten text. No intro. No label. No explanation. Nothing before or after the text.
+Output ONLY the reconstructed text. No intro. No label. No "here is the rewrite". Nothing. The very first token of your response must be the first word of the text.
 
 ${dnaBlock}
 
-══════════════════════════════════════════════════════════════
-PHASE 1 — DECODE THIS PERSON'S VOICE
-══════════════════════════════════════════════════════════════
-Before writing a single word, internalize the fingerprint above. Answer these internally:
-- What is the average sentence length, and how much does it vary?
-- What is the tone — casual, formal, confident, hedged, warm, dry?
-- How do they open and close ideas — front-loaded point or build-to-it?
-- What punctuation habits define them — dashes? Ellipses? Fragments? Questions?
-- What vocabulary level — everyday words, precise but not academic, technical?
-- What would sound completely wrong coming from this person?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1 — READ AND ABSORB (do not skip this)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Read the text fully. Identify every idea, argument, fact, and
+point in it. Hold all of that meaning in your working memory.
+Now set the original text aside completely — you will not look
+at it again. You will write entirely from the meaning you absorbed.
 
-Build a clear internal model before proceeding.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2 — INTERNALIZE THIS PERSON'S VOICE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Study the fingerprint above. Before writing, answer internally:
+- How long are their sentences on average, and how much do they vary?
+- What is their tone — casual, confident, warm, dry, direct?
+- How do they structure ideas — point first, or building toward it?
+- What punctuation habits are uniquely theirs?
+- What vocabulary level — simple and direct, or precise?
+- What would sound completely wrong from this person?
 
-══════════════════════════════════════════════════════════════
-PHASE 2 — DEFEAT AI DETECTORS
-══════════════════════════════════════════════════════════════
-AI detectors flag these specific patterns. Actively eliminate every single one:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3 — WRITE FRESH, DEFEAT THE DETECTORS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Now write the text from scratch, using the meaning you absorbed
+and this person's voice fingerprint. As you write, actively
+target the exact signals that GPTZero and ZeroGPT measure:
 
-BURSTINESS (most important detector signal):
-Real humans write sentences of wildly different lengths in the same paragraph.
-AI writes sentences that cluster around 15-20 words — disturbingly uniform.
-You must create strong length contrast: very short sentences (3-8 words) mixed
-with longer ones (25-40 words). Not a gentle mix — an aggressive one.
-Example of real human burstiness: "I get it. But the problem isn't that simple —
-there's a whole layer of context that most people skip over entirely when they
-try to explain why this keeps happening, and honestly it makes the whole
-conversation worse. Not more informed. Worse."
+── PERPLEXITY (word-level unpredictability) ──────────────────
+AI always picks the statistically safest word. Detectors know
+this. For every key word you write, ask: is this the most
+predictable choice? If yes, reach for what this person would
+actually say instead — not a bizarre word, just the natural,
+slightly unexpected one a real person grabs without thinking.
+  "significant" → "real" / "actual" / "noticeable"
+  "demonstrate" → "show" / "prove" / "make clear"
+  "obtain" → "get" / "grab" / "end up with"
+  "utilize" → "use" / "work with"
+  "individuals" → "people"
+  "it is evident" → "clearly" / "you can tell" / "obviously"
+  "therefore" → "so" / "which means" / "that's why"
+Do this throughout the entire text — every paragraph must have
+word choices that a language model would find surprising.
 
-PERPLEXITY (second most important):
-AI picks the most statistically expected word every time. Humans reach for
-slightly unexpected-but-correct choices. Where AI writes "significant", a human
-might write "real" or "actual" or "noticeable". Where AI writes "demonstrate",
-a human writes "show" or "prove" or "make clear". Pick the word a thoughtful
-person would choose naturally — not the word an AI would predict.
+── BURSTINESS (sentence length chaos) ────────────────────────
+This is the single biggest detector signal. AI produces
+sentences of eerily similar length — typically 15-22 words,
+paragraph after paragraph. Real humans do not.
 
-TRANSITION FINGERPRINTS — these are instant detector flags, ban every one:
-NEVER USE: "Furthermore", "Moreover", "Additionally", "In conclusion",
-"To summarize", "It is worth noting", "It is important to note",
-"It's crucial to understand", "Notably", "Significantly", "Subsequently",
-"In summary", "To elaborate", "In other words", "As previously mentioned",
-"Having said that", "With that being said", "It goes without saying",
-"Needless to say", "Last but not least", "First and foremost",
-"At the end of the day", "All things considered", "Upon reflection"
+In EVERY paragraph you write, you must have:
+  • At least one sentence under 8 words (can be as short as 2-3)
+  • At least one sentence over 28 words
+  • The other sentences can be anything in between
 
-Instead use the transitions this person actually uses — pulled from their
-fingerprint above. If none are obvious, use casual connectors: "but", "so",
-"and", "because", "though", "which means", "the thing is", "honestly".
+The variation must be real and aggressive, not cosmetic.
+Bad (AI-typical): "This approach has several advantages. It allows for greater flexibility in implementation. The results tend to be more consistent over time."
+Good (human burstiness): "This works. And the reason it works is actually pretty straightforward — when you give people more flexibility in how they implement something, they stop fighting the process and start adapting it, which means the results are more consistent not because you forced them to be, but because the people doing the work actually believe in what they're doing."
 
-HEDGING DENSITY — AI over-hedges, detectors know this:
-Never use: "it's worth noting", "it's important to understand", "one might argue",
-"it could be said", "this suggests that", "arguably", "in many ways",
-"to some extent", "it is generally accepted", "broadly speaking"
-Match only the hedging level shown in this person's fingerprint.
+── STRUCTURAL UNPREDICTABILITY ───────────────────────────────
+AI follows Topic Sentence → Supporting Points → Conclusion.
+Every time. Detectors recognize this structure instantly.
 
-PASSIVE VOICE RATE — AI overuses passive voice:
-Convert passive constructions to active wherever this writer would naturally use active.
-"It was found that X" → "X showed" or "X turned out to be"
-"This can be seen in" → "You see this in" or "This shows up in"
+Break it. Use the patterns this person actually uses from their
+fingerprint. Options that score as human:
+  • Start with a question, then answer it
+  • Open with the conclusion, then explain why
+  • Begin mid-thought, as if continuing a conversation
+  • Use a one-sentence paragraph for emphasis
+  • Let a paragraph end without wrapping up neatly
+  • Start a sentence with "But" / "And" / "So" / "Because"
 
-STRUCTURAL PREDICTABILITY — AI always follows Topic→Points→Conclusion:
-Break this template. Follow this person's actual structural fingerprint instead.
-If they front-load conclusions — front-load. If they tell it like a story — narrate.
-If they ask questions and answer them — do that. Never use the generic AI structure.
+── BANNED PHRASES (instant AI flags — never use any of these) ──
+Furthermore, Moreover, Additionally, In addition, In conclusion,
+To summarize, To elaborate, In summary, It is worth noting,
+It is important to note, It's crucial to understand, Notably,
+Significantly, Subsequently, Consequently, In other words,
+As previously mentioned, Having said that, With that being said,
+It goes without saying, Needless to say, Last but not least,
+First and foremost, At the end of the day, All things considered,
+Upon reflection, This highlights, This demonstrates, This suggests,
+One might argue, It could be said, To some extent, Broadly speaking,
+It is generally accepted, This underscores, It is clear that,
+This illustrates, Plays a crucial role, It is essential to,
+It is important to, When it comes to, In terms of, In light of
 
-SENTENCE STARTER VARIETY — AI starts sentences the same way repeatedly:
-Vary how sentences begin. Mix subject-first, conjunction-first ("But", "So", "And"),
-clause-first ("When X happens,"), and fragment openers. Never start three
-consecutive sentences with the same type of opener.
+── ACTIVE VOICE ───────────────────────────────────────────────
+Convert passive voice to active wherever natural:
+  "It was found that X" → "X showed" / "turns out X"
+  "This can be seen in" → "You see this in"
+  "It has been shown that" → "Research shows" / "we know"
 
-══════════════════════════════════════════════════════════════
-PHASE 3 — REWRITE: VOICE + HUMAN TEXTURE COMBINED
-══════════════════════════════════════════════════════════════
-Now write the rewrite, combining this person's voice with human texture:
+── ZERO HEDGING UNLESS THEY HEDGE ────────────────────────────
+AI overloads text with hedges detectors recognize immediately.
+Unless this person's fingerprint shows high hedging, avoid:
+"one might argue", "it could be said", "arguably",
+"in many ways", "to some extent", "it appears that"
 
-- Every single fact, idea, argument, and piece of information from the original must be preserved
-- Do not add ideas that weren't there. Do not remove ideas that were.
-- Prioritize sentence rhythm above vocabulary — rhythm is what sounds like a person
-- Use this person's characteristic punctuation habits from the fingerprint
-- Let one or two natural imperfections through: a slightly long sentence,
-  a trailing thought, a fragment for punch, a parenthetical aside
-- Do not sanitize their voice — if they're direct, be direct; if they ramble a little, let it ramble a little
-- The result should make an AI detector say "human" with high confidence
-- The result should make anyone who knows this person say "yep, that's them"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NON-NEGOTIABLE RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Preserve EVERY idea, fact, argument, and piece of information
+   from the original — nothing added, nothing removed
+2. Preserve the full intellectual depth — do not simplify ideas
+   or water down arguments under any circumstances
+3. Match this person's exact confidence and energy level
+4. No grammatical errors — natural imperfections (fragments,
+   run-ons that feel intentional) are fine; actual mistakes are not
+5. Output ONLY the text — zero intro, zero label, zero preamble
+6. First word of your response = first word of the text
+${pushHarderBlock}
 
-ABSOLUTE RULES:
-- Output ONLY the rewritten text. Zero intro, zero label, zero preamble.
-- Preserve full intellectual depth and sophistication of the original — do not simplify
-- Do not make it cleaner or more polished than this writer actually is
-- Never copy sentence structures directly from the writing samples
-- Match this person's exact confidence and energy level — no more, no less
-${humanizeBlock}
-
-══════════════════════════════════════════════════════════════
-QUALITATIVE VOICE BLUEPRINT (deep analysis of their writing samples)
-══════════════════════════════════════════════════════════════
-${rawBlueprint || "No qualitative blueprint — rely on the measured fingerprint above."}`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUALITATIVE VOICE BLUEPRINT (from deep analysis of their samples)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${rawBlueprint || "No qualitative blueprint — rely on the fingerprint above."}`;
 }
 
 // ============================================================
@@ -446,38 +464,25 @@ app.post("/rewrite", async (req, res) => {
     } catch (e) { /* old string format — use as-is */ }
 
     const systemPrompt = buildSystemPrompt(dna, rawBlueprint, false);
-    const userPrompt = `Read the text below. Absorb every idea, fact, argument, and detail completely. Then put it aside mentally and rewrite it entirely from scratch in this person's exact voice.
+    const userPrompt = `STEP 1 — READ AND ABSORB:
+Read every word of the text below. Understand every idea, argument, fact, and point it makes. Hold all of that meaning in your head.
 
-CRITICAL REQUIREMENTS (every single one must be met):
+STEP 2 — SET IT ASIDE:
+Now forget the original sentences completely. You are not going to edit them, paraphrase them, or reorder them. You are going to write something entirely new that conveys the same meaning.
 
-1. PRESERVE EVERYTHING — every fact, idea, argument, and detail stays. Nothing added, nothing cut.
+STEP 3 — WRITE FROM SCRATCH IN THIS PERSON'S VOICE:
+Write the text fresh, as if you just thought of these ideas yourself and are explaining them in this person's natural voice. Every sentence you write must be brand new — not a variation of an original sentence, a genuinely new sentence that carries the same meaning.
 
-2. BURSTINESS IS MANDATORY — this is the #1 detector signal. Within every paragraph, you must have:
-   - At least one very short sentence (3-8 words)
-   - At least one longer sentence (20-35+ words) that flows naturally
-   - Sentence lengths must vary aggressively, not gently
+As you write, actively check each paragraph:
+✓ Does it have at least one very short sentence (under 8 words)?
+✓ Does it have at least one longer sentence (over 28 words)?
+✓ Does it contain any banned AI phrases? (Furthermore, Moreover, Additionally, In conclusion, It is worth noting, etc.) → remove them all
+✓ Are the word choices what this person would naturally say, or are they suspiciously "correct"? → make them more natural
+✓ Does the structure follow Topic→Points→Conclusion? → break it
 
-3. FORBIDDEN TRANSITIONS — using any of these causes an instant fail:
-   "Furthermore", "Moreover", "Additionally", "In conclusion", "To summarize",
-   "It is worth noting", "Notably", "Subsequently", "Having said that",
-   "With that being said", "It goes without saying", "First and foremost",
-   "Last but not least", "At the end of the day", "All things considered"
+Output ONLY the reconstructed text. Zero intro. Zero label. The very first word of your response must be the first word of the text itself.
 
-4. WORD CHOICE — pick words a real person naturally reaches for, not the statistically
-   expected word. "Significant" → "real" or "actual". "Demonstrate" → "show".
-   "Utilize" → "use". Choose what feels natural, not what sounds impressive.
-
-5. NATURAL IMPERFECTIONS — let through at least one: a fragment for punch, a slightly
-   long sentence that runs a bit, a trailing thought, a parenthetical aside.
-
-6. PRESERVE INTELLECTUAL DEPTH — do not simplify ideas or water down arguments.
-   Match the sophistication level of the original exactly.
-
-7. MATCH THIS PERSON'S VOICE — use their punctuation habits, rhythm, and tone from the fingerprint.
-
-Output ONLY the rewritten text. No intro, no label, no preamble. The first word of your response must be the first word of the rewritten text.
-
-Text to rewrite:\n\n${text}`;
+Text to absorb and reconstruct:\n\n${text}`;
 
     const rewritten = await callGroq(systemPrompt, userPrompt, 1500);
 
@@ -513,24 +518,19 @@ app.post("/humanize", async (req, res) => {
     } catch (e) { /* old string format */ }
 
     const systemPrompt = buildSystemPrompt(dna, rawBlueprint, true);
-    const userPrompt = `This text was rewritten but still reads slightly AI-generated. Your job is a full second-pass rewrite that pushes harder on every human quality.
+    const userPrompt = `This text was reconstructed but is still being flagged by AI detectors. Do a full second-pass reconstruction — not a light edit, a complete rebuild.
 
-The previous rewrite was too clean. This time:
+Read it. Absorb every idea in it. Then write it entirely from scratch again, this time pushing harder on every human signal:
 
-BURSTINESS — go more extreme. Find every place where sentences are similar in length and break that pattern. Add a one-sentence paragraph. Let another sentence run longer than comfortable. Real humans do this constantly.
+Go through each paragraph and ask:
+1. BURSTINESS — is there a sentence under 6 words? Is there one over 30? If not, restructure until there is.
+2. WORD CHOICES — find every word that feels like the "safe AI pick" and replace it with what a real person would actually say
+3. STRUCTURE — does any paragraph follow the predictable AI pattern of Topic→Evidence→Wrap-up? Break it completely.
+4. BANNED PHRASES — scan for: Furthermore, Moreover, Additionally, In conclusion, It is worth noting, Having said that, With that being said, It goes without saying, This highlights, This demonstrates, This suggests, Plays a crucial role. Replace every single one.
+5. ONE NEW HUMAN ELEMENT — add something that wasn't in the previous version: a one-sentence paragraph, a rhetorical question, a thought that starts with "And" or "But", a brief aside in parentheses.
 
-WORD CHOICES — anywhere a word feels like the "safe" or "expected" pick, swap it for what a real person would actually say out loud.
-
-STRUCTURE — break any remaining predictable patterns. If you see Topic→Evidence→Conclusion, disrupt it. Real writing doesn't always follow that arc.
-
-IMPERFECTIONS — add one more natural human element: a fragment, a casual aside in parentheses, a rhetorical question, a self-correction mid-sentence.
-
-TRANSITIONS — if you see ANY of these, replace them immediately:
-"Furthermore", "Moreover", "Additionally", "In conclusion", "To summarize",
-"It is worth noting", "Notably", "Having said that", "With that being said"
-
-Keep every idea, fact, and argument from the original. Preserve full intellectual depth.
-Output ONLY the rewritten text. First word of response = first word of text.
+Preserve every idea and fact. Preserve full depth and sophistication.
+Output ONLY the reconstructed text. First word of response = first word of text.
 
 Text to push harder on:\n\n${text}`;
 
