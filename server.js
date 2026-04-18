@@ -22,14 +22,22 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 // ============================================================
-// GROQ API CALL (native https — no SDK needed, works on Render free tier)
+// GROQ API CALL
+// temperature: 0.72 for analysis (consistent, factual)
+//              1.0  for rewrites (creative, varied, unpredictable)
+// Higher temperature = more varied word choices = higher perplexity
+// = looks more human to detectors. 0.72 was making every rewrite
+// sound the same — safe, uniform, detectable.
 // ============================================================
-async function callGroq(systemPrompt, userPrompt, maxTokens = 2000) {
+async function callGroq(systemPrompt, userPrompt, maxTokens = 2000, temperature = 0.72) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       model: MODEL,
       max_tokens: maxTokens,
-      temperature: 0.72,
+      temperature: temperature,
+      top_p: 0.95,
+      frequency_penalty: 0.3,
+      presence_penalty: 0.3,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
@@ -595,7 +603,9 @@ app.post("/rewrite", async (req, res) => {
     const systemPrompt = buildSystemPrompt(dna, rawBlueprint, false);
     const userPrompt = buildRewriteUserPrompt(text);
 
-    const rewritten = await callGroq(systemPrompt, userPrompt, 1500);
+    // Temperature 1.0 = maximum word choice variation = high perplexity = passes detectors
+    // frequency_penalty reduces repetitive sentence patterns
+    const rewritten = await callGroq(systemPrompt, userPrompt, 1500, 1.0);
 
     res.json({ rewritten });
 
@@ -631,7 +641,8 @@ app.post("/humanize", async (req, res) => {
     const systemPrompt = buildSystemPrompt(dna, rawBlueprint, true);
     const userPrompt = buildHumanizeUserPrompt(text);
 
-    const rewritten = await callGroq(systemPrompt, userPrompt, 1500);
+    // 1.1 = push even harder on second pass — more unpredictable word choices
+    const rewritten = await callGroq(systemPrompt, userPrompt, 1500, 1.1);
 
     res.json({ rewritten });
 
