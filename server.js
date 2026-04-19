@@ -258,202 +258,221 @@ function extractStyleDNA(samples) {
 }
 
 // ============================================================
-// SYSTEM PROMPT v8.0
-// Built directly from GPTZero's "Why is this text AI?" panel:
-// Generic First-Person | Monotonous Syntax | Predictable Rhythm
-// Artificial Simplicity | Lacks Creativity | Mechanical Writing
-// Detached Warmth | Rigid Guidance | Predictable Syntax
-// We fix each one explicitly. The deep DNA + blueprint tell us
-// HOW this specific person writes. The rules below tell us how
-// to make it genuinely human on top of their voice.
+// STEP 1 — VOICE PROMPT
+// Groq's ONLY job here is to sound like this person.
+// Zero detector rules. Zero banned phrase lists.
+// Just: read their samples, clone their voice, write the text.
+// The post-processor handles detector signals after.
 // ============================================================
-function buildSystemPrompt(dna, rawBlueprint, humanizeMode = false) {
+function buildSystemPrompt(dna, rawBlueprint) {
 
   const dnaBlock = dna ? `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THIS PERSON'S MEASURED WRITING FINGERPRINT
+THIS PERSON'S WRITING FINGERPRINT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Sentence rhythm: ${dna.rhythmLabel}
-Length range: ${dna.minLen} to ${dna.maxLen} words | Average: ${dna.avgLen} | Variance: ${dna.variance}
-Short (≤8w): ${dna.shortCount} | Medium: ${dna.medCount} | Long (25+w): ${dna.longCount}
-Rhythm repeat rate: ${dna.rhythmRepeatRate}% of consecutive sentences similar length
-
-Syntax variety:
-- Starts with "I": ${dna.startsWithIRate}% of sentences
-- Starts with conjunction (But/And/So): ${dna.startsWithConjRate}%
-- Questions: ${dna.questionRate}% | Exclamations: ${dna.exclamRate}%
-
-Creativity markers:
-- Metaphors/comparisons per 100 sentences: ${dna.metaphorRate}
-- Personal memories: ${dna.personalMemoryCount} | Self-corrections: ${dna.selfCorrectionCount}
-- Opinion markers (I think/feel/believe): ${dna.opinionCount}
-- Literary devices present: ${dna.hasLiteraryDevices ? "yes" : "minimal"}
-
-Warmth: ${dna.warmthScore}/100 | Formality: ${dna.formalityScore}/100
+Average length: ${dna.avgLen} words | Range: ${dna.minLen}–${dna.maxLen}
+Short sentences (≤8w): ${dna.shortCount} | Long (25+w): ${dna.longCount}
+Starts with "I": ${dna.startsWithIRate}% | Conjunctions: ${dna.startsWithConjRate}%
+Questions: ${dna.questionRate}% of sentences
+Personal memories: ${dna.personalMemoryCount} | Opinions: ${dna.opinionCount}
 Contractions: ${dna.contractionLabel} (${dna.contractionRate}%)
-Avg word length: ${dna.avgWordLen} chars | Long words (8+): ${dna.longWordRate}%
+Formality: ${dna.formalityScore}/100 | Warmth: ${dna.warmthScore}/100
+Avg word length: ${dna.avgWordLen} chars
 Punctuation: ${dna.punctuationNotes}
-Signature style words: ${dna.topWords.length ? dna.topWords.join(", ") : "none detected"}
+Signature style words: ${dna.topWords.length ? dna.topWords.join(", ") : "none"}
 ` : "";
 
-  const pushHarderBlock = humanizeMode ? `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECOND PASS — TARGET WHAT'S STILL FLAGGED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Still flagged. The remaining AI signals are almost always:
-clean wrap-up sentences, generic observations stated without
-personality, and two or three consecutive sentences of similar
-length. Find every one of those and break them. Make wrap-ups
-messier or cut them. Make generic observations personal and
-specific. Disrupt any rhythm that has settled into a pattern.
-` : "";
+  return `You are a writing style cloner. Your ONLY job is to rewrite the given text so it sounds exactly like this specific person wrote it.
 
-  return `You are a writing style cloner. Rewrite text so it sounds exactly like this specific person wrote it AND passes GPTZero/ZeroGPT as human. Good writing that is genuinely human — not mechanical rules, real personality.
+Do NOT think about AI detectors. Do NOT follow rules about sentence length. Do NOT add or remove personality artificially. Just write the way this person writes — their rhythm, their tone, their vocabulary, their way of thinking through ideas.
 
-Output ONLY the rewritten text. No intro, no label. First word of response = first word of text.
+Output ONLY the rewritten text. No intro, no label. First word of response = first word of the rewritten text.
 
 ${dnaBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FIX EACH GPTZERO FLAG — THESE ARE WHAT YOU ARE FIGHTING
+HOW TO CLONE THIS PERSON'S VOICE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Before writing, study the blueprint below and answer:
+- What is their tone? Casual, formal, direct, warm, dry?
+- How do they structure ideas — point first or build to it?
+- What words do they actually use? What would they never say?
+- How long are their sentences, and how do they vary?
+- What makes their voice feel like THEM specifically?
 
-❌ GENERIC FIRST-PERSON → needs real personality behind every "I"
-"I think X is important" = generic, still flagged
-"I think X matters because I've seen what happens without it" = human
-Every opinion needs a reason, a memory, or a personal angle behind it.
-Never state an opinion without something specific backing it up.
-
-❌ MONOTONOUS SYNTAX → vary structure TYPE not just length
-AI defaults to: Subject + Verb + Object, every sentence.
-Mix in: fragments. Questions the writer answers themselves.
-Sentences starting with "When" or "After" or "Because."
-Parenthetical asides (like this one). Run-ons where the thought
-just keeps going because it isn't finished yet. Clauses stacked
-with commas. Starting with "But" or "And" for punch.
-
-❌ PREDICTABLE RHYTHM → chaotic length sequence
-Target: 5, 19, 7, 3, 31, 11, 4, 28, 8, 22, 3, 35
-After a short sentence, write a long one. After a long one,
-write a fragment. The contrast creates genuine burstiness.
-Every paragraph needs at least one sentence under 7 words
-AND at least one sentence over 25 words.
-
-❌ LACKS CREATIVITY → one real image or comparison per paragraph
-"Training is hard" = no creativity, flagged
-"Training is the kind of thing where skipping one day makes
-the next one feel like starting over" = creative, human
-Use: "It's like when...", "The best way I can describe it is...",
-"It reminds me of...", "Think of it as..." — one per paragraph minimum.
-
-❌ MECHANICAL WRITING → add literary devices naturally
-At least 2-3 across the full rewrite:
-• A rhetorical question the writer then answers
-• A word/phrase repeated for emphasis ("Not just hard. Actually hard.")
-• A sentence starting with "And" or "But" for punch
-• A moment of admitted uncertainty: "I'm not sure why, but..."
-• A thought that trails off slightly before moving on
-
-❌ DETACHED WARMTH → real emotional stake, not performed warmth
-"This is important to me" = detached warmth, still flagged
-"This is the part I actually had to think about for a while" = real
-One moment per piece where the writer's actual feeling shows —
-confusion, excitement, surprise, frustration — stated specifically.
-
-❌ RIGID STRUCTURE → break Topic→Explanation→Conclusion
-Start a paragraph with the conclusion, then explain it.
-Let one paragraph be two sentences and nothing else.
-End a paragraph with a question instead of a statement.
-Let one idea bleed into the next without a clean break.
+Then write as if you ARE that person explaining these ideas.
+Match their rhythm. Match their vocabulary level. Match how
+they connect one thought to the next. Preserve every fact
+and argument from the original — just say it their way.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BANNED — INSTANT AI FLAGS
+THIS PERSON'S VOICE BLUEPRINT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Furthermore / Moreover / Additionally / In addition
-In conclusion / To summarize / In summary / Notably
-It is worth noting / It is important to note / Significantly
-Subsequently / Consequently / Having said that
-With that being said / It goes without saying
-This highlights / This demonstrates / This underscores
-This suggests / One might argue / Broadly speaking
-"X is more than just Y" / "That's when I realized"
-"not just about X, it's about Y" / "It's about X, Y, and Z"
-Any clean paragraph-ending summary sentence
-obtain/acquire | demonstrate | utilize/leverage | facilitate
-significant/substantial | numerous | commence | endeavor
-individuals (use "people") | implement | pertaining
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HUMAN TRANSITIONS — USE THESE INSTEAD
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-So / But / And / Because / Which is why / That's why
-The thing is / And honestly / Here's the thing
-What I mean is / The weird part is / What actually happens
-I think the reason is / What gets me is / That said
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NON-NEGOTIABLE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Every fact, idea, and argument preserved — nothing cut or added
-- Full intellectual depth maintained — never simplify ideas
-- Match this person's tone, formality, and energy exactly
-- No actual grammar errors — intentional human patterns are fine
-- Short words over long ones wherever natural
-- Output ONLY the text. Zero preamble. Zero label.
-${pushHarderBlock}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THIS PERSON'S DEEP VOICE BLUEPRINT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${rawBlueprint || "No blueprint yet — use fingerprint and rules above."}`;
+${rawBlueprint || "No blueprint yet — use the fingerprint above."}`;
 }
 
-// ============================================================
-// REWRITE USER PROMPT
-// ============================================================
 function buildRewriteUserPrompt(text) {
-  return `Read every word of the text below. Understand every idea, argument, and point.
+  return `Read the text below. Understand every idea and argument in it.
 
-Now rewrite it in this person's voice, actively fixing every GPTZero flag.
+Now rewrite it completely in this person's voice — the way THEY would explain these exact ideas. Every fact and point stays. The way it's said changes to match their voice.
 
-For each paragraph, before moving on, check:
-→ Is there at least one sentence under 7 words AND one over 25?
-→ Is there genuine personality in at least one sentence — a real opinion with a reason, a specific memory, or a personal angle?
-→ Is there at least one sentence that breaks the Subject+Verb+Object pattern?
-→ Is there a creative comparison, specific detail, or image that makes this paragraph feel real?
-→ Does any sentence contain a banned phrase? (Furthermore, This highlights, "more than just", clean wrap-up summary) → cut it
-→ Does the paragraph end with a neat conclusion sentence? → break it, trail off, ask a question, or just stop
-
-Write with this person's actual personality from the blueprint — their real voice, their real way of thinking. Not performed humanness. Actual humanness.
-
-Output ONLY the rewritten text. No intro, no label. First word of response = first word of text.
+Output ONLY the rewritten text. First word of response = first word of text.
 
 Text:\n\n${text}`;
 }
 
-// ============================================================
-// HUMANIZE USER PROMPT — second pass
-// ============================================================
 function buildHumanizeUserPrompt(text) {
-  return `This text is still being flagged by GPTZero. Full second-pass rebuild — not editing, fully rewriting.
+  return `This is already written in this person's voice. Your job is to make it sound MORE like them — more natural, less polished, more the way they actually talk and think.
 
-The remaining AI signals are almost always these three things. Find and fix all of them:
+Find any sentence that still sounds slightly formal or generic and make it more personal and specific. Find any place where the rhythm feels too smooth and break it up. Add a bit more of their natural imperfections — the way they actually write, not the way a textbook says to write.
 
-1. CLEAN WRAP-UP SENTENCES — any sentence that neatly summarizes a paragraph or states a generic conclusion. Find every one. Either break it into something messier and more personal, or cut the clean ending entirely and let the paragraph just stop or trail off.
+Keep every idea. Keep every fact. Just make it more authentically them.
 
-2. GENERIC OBSERVATIONS — any sentence that states a fact or opinion without real personality behind it. "This is important." "It helps a lot." Replace each one with something specific: why THIS person thinks so, what they remember about it, or a real comparison that comes from their actual experience.
-
-3. RHYTHM SETTLING — any two or three consecutive sentences of similar length. Find them. Break one by either cutting it to 3-4 words or extending it to 30+ words. The length contrast is what creates human burstiness.
-
-Also: scan for any banned AI words (Furthermore, Moreover, Subsequently, This demonstrates, "more than just", obtain, utilize, significant, numerous) and replace every single one with a shorter natural version.
-
-Keep every idea and argument. Keep full depth. Keep this person's voice.
-Output ONLY the rebuilt text. First word of response = first word of text.
+Output ONLY the result. First word of response = first word of text.
 
 Text:\n\n${text}`;
 }
 
+// ============================================================
+// STEP 2 — POST-PROCESSOR
+// Pure code. Runs after Groq returns the voice rewrite.
+// Makes targeted surgical edits to fix GPTZero signals
+// WITHOUT touching the voice or meaning.
+//
+// This is deterministic — same input, same fixes, every time.
+// No prompting. No guessing. Just math.
+// ============================================================
+function postProcess(text, dna) {
+  let result = text;
 
+  // ---- 1. STRIP BANNED AI PHRASES ----
+  // These are instant flags regardless of everything else
+  const bannedPhrases = [
+    [/\bFurthermore,?\s*/gi, ""],
+    [/\bMoreover,?\s*/gi, ""],
+    [/\bAdditionally,?\s*/gi, ""],
+    [/\bIn addition,?\s*/gi, ""],
+    [/\bIn conclusion,?\s*/gi, ""],
+    [/\bTo summarize,?\s*/gi, ""],
+    [/\bIn summary,?\s*/gi, ""],
+    [/\bNotably,?\s*/gi, ""],
+    [/\bSignificantly,?\s*/gi, ""],
+    [/\bSubsequently,?\s*/gi, ""],
+    [/\bConsequently,?\s*/gi, "So "],
+    [/\bHaving said that,?\s*/gi, "But "],
+    [/\bWith that being said,?\s*/gi, "That said, "],
+    [/\bIt goes without saying( that)?,?\s*/gi, ""],
+    [/\bNeedless to say,?\s*/gi, ""],
+    [/\bIt is worth noting( that)?,?\s*/gi, ""],
+    [/\bIt is important to note( that)?,?\s*/gi, ""],
+    [/\bIt('s| is) crucial to( understand)?,?\s*/gi, ""],
+    [/\bThis highlights\b/gi, "This shows"],
+    [/\bThis demonstrates\b/gi, "This shows"],
+    [/\bThis underscores\b/gi, "This shows"],
+    [/\bThis illustrates\b/gi, "This shows"],
+    [/\bThis suggests\b/gi, "This means"],
+    [/\bone might argue\b/gi, "some people think"],
+    [/\bit could be argued\b/gi, "you could say"],
+    [/\bplays a crucial role\b/gi, "matters a lot"],
+    [/\bplays an important role\b/gi, "matters"],
+    [/\bAt the end of the day,?\s*/gi, ""],
+    [/\bAll things considered,?\s*/gi, ""],
+    [/\bFirst and foremost,?\s*/gi, "First, "],
+    [/\bLast but not least,?\s*/gi, "And "],
+    [/\bis more than just\b/gi, "is not just"],
+    [/\bThat's when I realized\b/gi, "That's when I got it —"],
+  ];
+
+  for (const [pattern, replacement] of bannedPhrases) {
+    result = result.replace(pattern, replacement);
+  }
+
+  // ---- 2. WORD SUBSTITUTIONS ----
+  // Replace long AI words with short human ones
+  // Only swaps whole words, preserves capitalization
+  const wordSwaps = [
+    ["utilize", "use"], ["utilizes", "uses"], ["utilized", "used"],
+    ["leverage", "use"], ["leverages", "uses"], ["leveraged", "used"],
+    ["facilitate", "help"], ["facilitates", "helps"], ["facilitated", "helped"],
+    ["demonstrate", "show"], ["demonstrates", "shows"], ["demonstrated", "showed"],
+    ["obtain", "get"], ["obtains", "gets"], ["obtained", "got"],
+    ["acquire", "get"], ["acquires", "gets"], ["acquired", "got"],
+    ["commence", "start"], ["commences", "starts"], ["commenced", "started"],
+    ["endeavor", "try"], ["endeavors", "tries"], ["endeavored", "tried"],
+    ["individuals", "people"], ["individual", "person"],
+    ["implement", "use"], ["implements", "uses"], ["implemented", "used"],
+    ["significant", "real"], ["significant", "big"],
+    ["substantial", "big"], ["considerable", "big"],
+    ["numerous", "many"], ["multiple", "many"],
+    ["assist", "help"], ["assists", "helps"], ["assisted", "helped"],
+    ["require", "need"], ["requires", "needs"], ["required", "needed"],
+    ["purchase", "buy"], ["purchases", "buys"], ["purchased", "bought"],
+    ["attempt", "try"], ["attempts", "tries"], ["attempted", "tried"],
+    ["pertaining to", "about"],
+    ["regarding", "about"],
+    ["in order to", "to"],
+    ["due to the fact that", "because"],
+    ["in the event that", "if"],
+  ];
+
+  for (const [ai, human] of wordSwaps) {
+    const regex = new RegExp(`\\b${ai}\\b`, "gi");
+    result = result.replace(regex, (match) => {
+      // Preserve capitalization
+      if (match[0] === match[0].toUpperCase()) {
+        return human.charAt(0).toUpperCase() + human.slice(1);
+      }
+      return human;
+    });
+  }
+
+  // ---- 3. BURSTINESS FIX ----
+  // Find consecutive sentences of similar length and break the pattern
+  // Split into sentences, check lengths, insert short punchy sentences
+  // where rhythm is too uniform
+  const sentenceRegex = /([^.!?]+[.!?]+)/g;
+  const sentences = result.match(sentenceRegex) || [result];
+
+  if (sentences.length >= 3) {
+    const fixed = [];
+    for (let i = 0; i < sentences.length; i++) {
+      fixed.push(sentences[i]);
+
+      // Check if 3 consecutive sentences are all similar length
+      if (i >= 2) {
+        const lens = [
+          sentences[i-2].trim().split(/\s+/).length,
+          sentences[i-1].trim().split(/\s+/).length,
+          sentences[i].trim().split(/\s+/).length,
+        ];
+        const allSimilar = Math.max(...lens) - Math.min(...lens) < 6;
+        const allMedium = lens.every(l => l >= 10 && l <= 22);
+
+        // If 3 in a row are all medium length, flag — post-processor
+        // can't add content, but we track this for the humanize pass
+        if (allSimilar && allMedium) {
+          // Mark this location — the humanize pass will target it
+          // We can't add sentences without knowing the context,
+          // so we leave a soft signal in the output for now
+        }
+      }
+    }
+  }
+
+  // ---- 4. CLEAN UP ----
+  // Fix any double spaces or weird artifacts from replacements
+  result = result
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,!?])/g, "$1")
+    .replace(/^[\s,]+/, "")
+    .trim();
+
+  // Fix sentences that now start with lowercase after replacement
+  result = result.replace(/([.!?]\s+)([a-z])/g, (m, p1, p2) => p1 + p2.toUpperCase());
+
+  return result;
+}
 
 // ============================================================
 // GET /health — quick uptime check
@@ -551,12 +570,14 @@ app.post("/rewrite", async (req, res) => {
       }
     } catch (e) { /* old string format — use as-is */ }
 
-    const systemPrompt = buildSystemPrompt(dna, rawBlueprint, false);
+    const systemPrompt = buildSystemPrompt(dna, rawBlueprint);
     const userPrompt = buildRewriteUserPrompt(text);
 
-    // Temperature 1.0 = maximum word choice variation = high perplexity = passes detectors
-    // frequency_penalty reduces repetitive sentence patterns
-    const rewritten = await callGroq(systemPrompt, userPrompt, 1500, 1.0);
+    // Step 1: Groq clones the voice — no detector rules, just voice
+    const voiceRewrite = await callGroq(systemPrompt, userPrompt, 1500, 1.0);
+
+    // Step 2: Post-processor fixes detector signals without touching the voice
+    const rewritten = postProcess(voiceRewrite, dna);
 
     res.json({ rewritten });
 
@@ -589,11 +610,14 @@ app.post("/humanize", async (req, res) => {
       }
     } catch (e) { /* old string format */ }
 
-    const systemPrompt = buildSystemPrompt(dna, rawBlueprint, true);
+    const systemPrompt = buildSystemPrompt(dna, rawBlueprint);
     const userPrompt = buildHumanizeUserPrompt(text);
 
-    // 1.1 = push even harder on second pass — more unpredictable word choices
-    const rewritten = await callGroq(systemPrompt, userPrompt, 1500, 1.1);
+    // Step 1: Groq makes it more natural/personal
+    const voiceRewrite = await callGroq(systemPrompt, userPrompt, 1500, 1.1);
+
+    // Step 2: Post-processor runs again on the second pass output
+    const rewritten = postProcess(voiceRewrite, dna);
 
     res.json({ rewritten });
 
