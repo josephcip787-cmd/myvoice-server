@@ -409,6 +409,25 @@ CLONE THEIR VOICE (rhythm, words, personality):
 → Let their personality come through — opinions, uncertainty, enthusiasm
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL — WHAT GPTZERO ACTUALLY DETECTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HUMAN signal #1 — personal stories with specific details
+  A real memory: "when I was a kid I said something mean to a friend"
+  GPTZero cannot flag specificity. It's maximum perplexity.
+
+HUMAN signal #2 — narrative structure
+  Intro that leads into a personal experience, not a list of points.
+
+AI signal #1 — contrast phrasing (kills even casual writing)
+  "not just X, but Y" / "not just about X, but about Y"
+  "it's not just X, it's Y" / "more than just X"
+  GPTZero catches this EVERY TIME even surrounded by "I mean" and "you know"
+  NEVER use this construction. Say the positive directly instead.
+
+AI signal #2 — performing casualness without real content
+  "I mean" and "you know" without a real story behind them = still AI
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 THIS PERSON'S FULL VOICE AND STRUCTURE BLUEPRINT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${rawBlueprint || "No blueprint yet — rely on the fingerprint above."}`;
@@ -416,32 +435,80 @@ ${rawBlueprint || "No blueprint yet — rely on the fingerprint above."}`;
 
 // ============================================================
 // REWRITE USER PROMPT — restructure + voice in one pass
+// Built from GPTZero's exact human vs AI breakdown:
+//
+// WHAT MAKES A SENTENCE HUMAN (GPTZero confirmed):
+// → Narrative Structure — intro that leads into a personal story
+// → Subjective Stance — "I've learned that the hard way"
+// → Personal Anecdote — a real specific memory as evidence
+// → Informal Persuasion — personal story used to make a point
+// → Distinct Personal Voice — opinion + informal language together
+//
+// WHAT MAKES A SENTENCE AI (GPTZero confirmed):
+// → Contrast Phrasing — "not just X, but Y" kills it EVERY TIME
+//   even when surrounded by casual language like "I mean" and "you know"
+// → Artificial Simplicity — performing casualness without real substance
+//   "I mean" without a real story behind it = still AI
+//
+// THE KEY LESSON: "I mean" and "you know" don't make writing human.
+// A REAL PERSONAL STORY embedded in the writing makes it human.
 // ============================================================
 function buildRewriteUserPrompt(text) {
-  return `Read the text below. Understand every idea, fact, and argument in it completely.
+  return `Read the text below completely. Understand every idea, argument, and fact in it.
 
-Now look at its structure. It's probably written like an explanation or guide — linear, organized, each point leading to the next. That's ChatGPT's structure. A real person doesn't think or write like that.
+Now rewrite it in this person's voice AND structure. The text is probably written like a guide or explanation — linear, organized, each point leading cleanly to the next. That's ChatGPT's skeleton. You need to rebuild it the way this specific person actually thinks.
 
-Your job is to do two things at once:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHAT MAKES WRITING GENUINELY HUMAN (use these)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+→ PERSONAL STORIES — this is the #1 human signal GPTZero cannot fake.
+  A real specific memory woven into the writing. Not "people often feel X"
+  but "I remember when I was a kid and X happened." The more specific
+  the detail, the more human it registers. Use them wherever they fit.
 
-1. RESTRUCTURE IT — rebuild the organization to match how this person actually thinks:
-   - If they front-load conclusions, start with the point and explain after
-   - If they tell stories, frame this as a story or personal experience
-   - If they mix opinions with facts, weave them together instead of separating them
-   - If they jump around, don't follow the original order strictly
-   - If they address the reader, talk to the reader
-   - Don't give each idea its own clean paragraph — let ideas bleed into each other
-   - Don't wrap up each point with a summary sentence — move on when the thought is done
-   - Start somewhere that feels natural for THIS person, not at the beginning of the topic
+→ NARRATIVE STRUCTURE — instead of Point → Explanation → Point,
+  tell it like a story: here's what I noticed → here's why it matters
+  → here's what I learned from it. Humans think in stories, not outlines.
 
-2. REWRITE IN THEIR VOICE — every sentence should sound like them:
-   - Their rhythm, their word choices, their tone
-   - Their way of connecting one idea to the next
-   - Their personality showing through
+→ SUBJECTIVE STANCE — statements like "I've learned that the hard way"
+  or "I didn't really get this until..." show real experience behind the opinion.
+  Not just "I think X is important" but WHY this person specifically thinks so.
 
-PRESERVE: Every fact, idea, and argument must still be there. Restructure and rephrase — don't cut content.
+→ GENUINE UNCERTAINTY — "I guess", "I mean", "I'm not totally sure but..."
+  These work when they come WITH a real thought behind them, not alone.
 
-Output ONLY the rewritten text. No intro, no label. First word of response = first word of text.
+→ THIS PERSON'S STRUCTURE — use the blueprint to figure out how THEY
+  organize ideas. Do they front-load? Tell stories? Jump between points?
+  Mix opinions with facts? Match that pattern, not ChatGPT's pattern.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHAT MAKES WRITING AI EVEN WHEN IT SOUNDS CASUAL (never do these)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+→ CONTRAST PHRASING — this is the #1 AI flag GPTZero catches every time,
+  even inside casual sentences. Never use these constructions:
+  "not just about X, but Y"
+  "not just X, but also Y"
+  "it's not just X, it's Y"
+  "they're not just X, they're Y"
+  "not about X, but about Y"
+  "more than just X"
+  These sound human but GPTZero catches them as AI every single time.
+  Instead just say the positive: "it's about X and Y" or "it's really about Y"
+
+→ ARTIFICIAL SIMPLICITY — "I mean" and "you know" without a real story
+  behind them. Performed casualness without actual content = still AI.
+
+→ LINEAR STRUCTURE — Topic sentence → 3 supporting points → conclusion.
+  This skeleton is AI even when the words sound casual.
+
+→ CLEAN WRAP-UPS — ending paragraphs with a tidy summary sentence.
+  Real people move on when they're done, they don't summarize.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRESERVE: Every fact, idea, and argument stays. Restructure and rephrase — never cut content.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Output ONLY the rewritten text. No intro, no label. First word = first word of text.
 
 Text:\n\n${text}`;
 }
@@ -450,17 +517,26 @@ Text:\n\n${text}`;
 // HUMANIZE USER PROMPT — second pass, more personal
 // ============================================================
 function buildHumanizeUserPrompt(text) {
-  return `This is written in this person's voice but it still reads slightly AI. Make it more authentically them.
+  return `This is written in this person's voice but GPTZero is still flagging parts of it. Fix the remaining AI signals.
 
-Find the parts that still feel too clean, too organized, or too generic. For each one:
-- If a sentence wraps up an idea too neatly, break it or trail off
-- If a paragraph follows a too-obvious structure, disrupt it
-- If an opinion is stated without personality behind it, add the specific reason this person would have
-- If two or three sentences are the same length in a row, break the rhythm
+The two things GPTZero catches even in casual writing:
 
-The goal is not to make it worse — it's to make it feel more like this person actually sat down and typed it without overthinking.
+1. CONTRAST PHRASING — scan for every instance of:
+   "not just X, but Y" / "not just about X, but about Y" / "it's not just X, it's Y"
+   "they're not just X, they're Y" / "more than just" / "not about X, but about Y"
+   Replace every single one. Just say the positive directly.
+   "not just about words, but about feelings" → "about words and feelings, really"
+   "it's not just information, it's emotion" → "it carries emotion just as much as information"
 
-Keep every fact and argument. Keep full depth.
+2. MISSING PERSONAL STORY — find any paragraph that makes a point without
+   a specific personal detail. Add a brief real-feeling memory or specific moment.
+   Not generic ("people often feel this") but specific ("I remember when...").
+   Even one specific detail per paragraph changes the score dramatically.
+
+3. CLEAN WRAP-UPS — any sentence that neatly summarizes what just happened.
+   Break it, trail off, or just cut it and move on.
+
+Keep every fact and argument. Keep full depth and quality.
 Output ONLY the result. First word of response = first word of text.
 
 Text:\n\n${text}`;
@@ -482,6 +558,7 @@ function postProcess(text, dna) {
   // ---- 1. STRIP BANNED AI PHRASES ----
   // These are instant flags regardless of everything else
   const bannedPhrases = [
+    // ---- Classic AI transitions ----
     [/\bFurthermore,?\s*/gi, ""],
     [/\bMoreover,?\s*/gi, ""],
     [/\bAdditionally,?\s*/gi, ""],
@@ -513,8 +590,26 @@ function postProcess(text, dna) {
     [/\bAll things considered,?\s*/gi, ""],
     [/\bFirst and foremost,?\s*/gi, "First, "],
     [/\bLast but not least,?\s*/gi, "And "],
-    [/\bis more than just\b/gi, "is not just"],
     [/\bThat's when I realized\b/gi, "That's when I got it —"],
+
+    // ---- CONTRAST PHRASING — #1 remaining AI flag ----
+    // GPTZero specifically flags "not just X, but Y" as AI
+    // These are the most common forms of this construction
+    [/\bnot just about ([^,]+), but (also )?about\b/gi, "about $1 and also"],
+    [/\bnot just ([^,]+), but (also )?([^.!?]+)/gi, "also $3, not just $1,"],
+    [/\bit's not just ([^,]+), (it's|they're|but) (also )?/gi, "it's "],
+    [/\bthey're not just ([^,]+), (they're|but) (also )?/gi, "they're "],
+    [/\bwords are not just\b/gi, "words are"],
+    [/\bit is not just\b/gi, "it's"],
+    [/\bnot just about\b/gi, "about"],
+    [/\bis more than just\b/gi, "is really"],
+    [/\bmore than just\b/gi, "actually"],
+
+    // ---- Clean summary sentence enders ----
+    // "Because of this, X is important/necessary/essential"
+    [/\bBecause of this,?\s*(it is|it's|they are|they're)\s+(important|necessary|essential|crucial|vital)\b/gi, "And that matters"],
+    [/\b(it is|it's)\s+(important|necessary|essential|crucial|vital)\s+to\b/gi, "you need to"],
+    [/\busing words thoughtfully isn't just important[^.]*\./gi, "words matter more than most people think."],
   ];
 
   for (const [pattern, replacement] of bannedPhrases) {
