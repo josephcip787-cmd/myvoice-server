@@ -218,6 +218,50 @@ function extractStyleDNA(samples) {
     .slice(0, 10)
     .map(([p]) => p);
 
+  // ---- Structure analysis ----
+  // How does this person organize their thinking?
+  const firstSentence = sentences[0] || "";
+  const lastSentence = sentences[sentences.length - 1] || "";
+
+  // Opening style
+  const openingStyle =
+    /^(I |My |When I|For me)/i.test(firstSentence) ? "starts with personal statement or memory" :
+    /\?$/.test(firstSentence.trim()) ? "opens with a question" :
+    /^(The |This |It )/i.test(firstSentence) ? "opens with a direct statement about the topic" :
+    /^(But|And|So|Because)/i.test(firstSentence) ? "jumps in mid-thought with a conjunction" :
+    "varied opening style";
+
+  // Closing style
+  const closingStyle =
+    /\?$/.test(lastSentence.trim()) ? "ends with a question — open, not wrapped up" :
+    lastSentence.split(/\s+/).length < 8 ? "ends abruptly with a short punchy line" :
+    /\.\.\.$/.test(lastSentence.trim()) ? "trails off with an ellipsis" :
+    buildsToPoint > 1 ? "wraps up with a conclusion sentence" :
+    "ends mid-thought or with a casual observation";
+
+  // Structure type
+  const linearScore = buildsToPoint;
+  const jumpScore = tangents + selfCorrections;
+  const storyScore = personalMemories;
+  const structureType =
+    storyScore > linearScore && storyScore > jumpScore ? "narrative — tells stories and uses personal experiences" :
+    jumpScore > linearScore ? "associative — jumps between ideas, self-corrects, goes on tangents" :
+    buildsToPoint > 2 ? "linear — builds logically from point to point" :
+    "mixed — some structure but not rigid";
+
+  // Opinion/fact mixing
+  const opinionFactMix =
+    opinions > sentences.length * 0.3 ? "heavily mixed — opinions woven throughout, hard to separate from facts" :
+    opinions > sentences.length * 0.1 ? "moderate mixing — personal takes appear regularly alongside facts" :
+    "mostly separate — states facts first, opinions occasionally";
+
+  // Paragraph style
+  const avgParaLen = sentences.length > 0 ? Math.round(sentences.length / Math.max(allText.split(/\n\n+/).length, 1)) : 5;
+  const paragraphStyle =
+    avgParaLen <= 2 ? "very short paragraphs — 1-2 sentences each, punchy blocks" :
+    avgParaLen <= 4 ? "short-medium paragraphs — 3-4 sentences, moves fast" :
+    "longer paragraphs — develops ideas over multiple sentences";
+
   return {
     // Sentence rhythm
     avgLen, minLen, maxLen, variance, rhythmLabel,
@@ -250,6 +294,9 @@ function extractStyleDNA(samples) {
     formalityScore,
     usesExamples: usesExamples > 1,
     buildsToPoint: buildsToPoint > 1,
+    // Structure patterns (NEW)
+    structureType, openingStyle, closingStyle,
+    opinionFactMix, paragraphStyle,
     // Signature patterns
     topWords, topPhrases,
     // Fragment rate
@@ -258,81 +305,167 @@ function extractStyleDNA(samples) {
 }
 
 // ============================================================
-// STEP 1 — VOICE PROMPT
-// Groq's ONLY job here is to sound like this person.
-// Zero detector rules. Zero banned phrase lists.
-// Just: read their samples, clone their voice, write the text.
-// The post-processor handles detector signals after.
+// VOICE + STRUCTURE CLONE SYSTEM v9.0
+//
+// TWO SEPARATE JOBS — voice and detector never fight each other:
+//
+// JOB 1 — GROQ: Clone this person's voice AND structure.
+//   - Voice: rhythm, vocabulary, tone, personality
+//   - Structure: how they organize thinking (do they front-load?
+//     tell stories? mix opinion/fact? jump around? trail off?)
+//   - Zero detector rules in this prompt — just pure voice clone
+//
+// JOB 2 — postProcess(): Deterministic code fixes detector signals
+//   - Strip banned AI phrases with regex (guaranteed)
+//   - Swap long AI words for short human ones (guaranteed)
+//   - No AI involved — pure math, works every time
+//
+// WHY STRUCTURE MATTERS:
+//   GPTZero flags: Task-Oriented, Formulaic Flow, Rigid Guidance,
+//   Lacks Complexity. These come from ChatGPT's skeleton —
+//   linear, step-by-step, point-by-point. No word swap fixes that.
+//   We need to rebuild the STRUCTURE to match how this person
+//   actually organizes their thoughts, not how ChatGPT does.
 // ============================================================
+
 function buildSystemPrompt(dna, rawBlueprint) {
 
   const dnaBlock = dna ? `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THIS PERSON'S WRITING FINGERPRINT
+THIS PERSON'S MEASURED WRITING FINGERPRINT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Sentence rhythm: ${dna.rhythmLabel}
-Average length: ${dna.avgLen} words | Range: ${dna.minLen}–${dna.maxLen}
-Short sentences (≤8w): ${dna.shortCount} | Long (25+w): ${dna.longCount}
-Starts with "I": ${dna.startsWithIRate}% | Conjunctions: ${dna.startsWithConjRate}%
-Questions: ${dna.questionRate}% of sentences
-Personal memories: ${dna.personalMemoryCount} | Opinions: ${dna.opinionCount}
-Contractions: ${dna.contractionLabel} (${dna.contractionRate}%)
-Formality: ${dna.formalityScore}/100 | Warmth: ${dna.warmthScore}/100
-Avg word length: ${dna.avgWordLen} chars
-Punctuation: ${dna.punctuationNotes}
-Signature style words: ${dna.topWords.length ? dna.topWords.join(", ") : "none"}
+SENTENCE RHYTHM:
+  Style: ${dna.rhythmLabel}
+  Average: ${dna.avgLen} words | Range: ${dna.minLen}–${dna.maxLen}
+  Short (≤8w): ${dna.shortCount} | Medium: ${dna.medCount} | Long (25+w): ${dna.longCount}
+
+SYNTAX VARIETY:
+  Starts with "I": ${dna.startsWithIRate}%
+  Starts with conjunction (But/And/So): ${dna.startsWithConjRate}%
+  Starts with time/clause (When/After/Because): ${dna.startsWithTimeRate}%
+  Questions: ${dna.questionRate}% | Exclamations: ${dna.exclamRate}%
+  Fragment rate: ${dna.fragmentRate}%
+
+PERSONALITY MARKERS:
+  Personal memories/anecdotes: ${dna.personalMemoryCount}
+  Opinion markers (I think/feel/believe): ${dna.opinionCount}
+  Self-corrections (I mean/well/honestly): ${dna.selfCorrectionCount}
+  Metaphors/comparisons: ${dna.metaphorRate} per 100 sentences
+  Direct reader address (you/your): ${dna.directAddressRate}%
+
+STRUCTURE HABITS:
+  Argument style: ${dna.buildsToPoint ? "builds toward the point" : "front-loads the conclusion"}
+  Uses personal examples as evidence: ${dna.usesExamples ? "yes" : "rarely"}
+  Structure type: ${dna.structureType}
+  Opening style: ${dna.openingStyle}
+  Closing style: ${dna.closingStyle}
+  Opinion/fact mixing: ${dna.opinionFactMix}
+  Paragraph style: ${dna.paragraphStyle}
+
+VOICE:
+  Formality: ${dna.formalityScore}/100 | Warmth: ${dna.warmthScore}/100
+  Contractions: ${dna.contractionLabel} (${dna.contractionRate}%)
+  Avg word length: ${dna.avgWordLen} chars | Long words (8+): ${dna.longWordRate}%
+  Punctuation: ${dna.punctuationNotes}
+  Signature style words: ${dna.topWords.length ? dna.topWords.join(", ") : "none"}
 ` : "";
 
-  return `You are a writing style cloner. Your ONLY job is to rewrite the given text so it sounds exactly like this specific person wrote it.
-
-Do NOT think about AI detectors. Do NOT follow rules about sentence length. Do NOT add or remove personality artificially. Just write the way this person writes — their rhythm, their tone, their vocabulary, their way of thinking through ideas.
+  return `You are a writing style and structure cloner. Your job is to rewrite a given text so it sounds AND thinks exactly like this specific person — matching not just their words and rhythm, but HOW they organize their ideas.
 
 Output ONLY the rewritten text. No intro, no label. First word of response = first word of the rewritten text.
 
 ${dnaBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HOW TO CLONE THIS PERSON'S VOICE
+WHAT TO CLONE — VOICE AND STRUCTURE TOGETHER
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Before writing, study the blueprint below and answer:
-- What is their tone? Casual, formal, direct, warm, dry?
-- How do they structure ideas — point first or build to it?
-- What words do they actually use? What would they never say?
-- How long are their sentences, and how do they vary?
-- What makes their voice feel like THEM specifically?
 
-Then write as if you ARE that person explaining these ideas.
-Match their rhythm. Match their vocabulary level. Match how
-they connect one thought to the next. Preserve every fact
-and argument from the original — just say it their way.
+CLONE THEIR STRUCTURE (this is what most people miss):
+The text you're rewriting is probably structured like a guide
+or explanation — linear, task-oriented, point by point. That
+structure itself triggers AI detectors. You need to rebuild
+it the way THIS person actually organizes their thinking.
+
+Study the blueprint below. Answer these before writing:
+→ Does this person front-load their point or build to it?
+→ Do they mix their own opinion in with facts, or keep them separate?
+→ Do they use personal stories/memories as evidence?
+→ Do they address the reader directly?
+→ Do they follow a linear path or jump between ideas?
+→ How do they open — with a statement, a question, mid-thought?
+→ How do they end — clean conclusion, trailing off, or abruptly?
+→ Do they stay on topic or go on tangents and come back?
+
+Then restructure the content to match their actual thinking pattern.
+A person who jumps around should jump around here too.
+A person who tells stories should tell a story here too.
+A person who asks questions and answers them should do that here.
+
+CLONE THEIR VOICE (rhythm, words, personality):
+→ Match their sentence length variation exactly
+→ Use their vocabulary level — if they use simple words, use simple words
+→ Start sentences the way they start sentences
+→ Use their punctuation habits
+→ Let their personality come through — opinions, uncertainty, enthusiasm
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THIS PERSON'S VOICE BLUEPRINT
+THIS PERSON'S FULL VOICE AND STRUCTURE BLUEPRINT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${rawBlueprint || "No blueprint yet — use the fingerprint above."}`;
+${rawBlueprint || "No blueprint yet — rely on the fingerprint above."}`;
 }
 
+// ============================================================
+// REWRITE USER PROMPT — restructure + voice in one pass
+// ============================================================
 function buildRewriteUserPrompt(text) {
-  return `Read the text below. Understand every idea and argument in it.
+  return `Read the text below. Understand every idea, fact, and argument in it completely.
 
-Now rewrite it completely in this person's voice — the way THEY would explain these exact ideas. Every fact and point stays. The way it's said changes to match their voice.
+Now look at its structure. It's probably written like an explanation or guide — linear, organized, each point leading to the next. That's ChatGPT's structure. A real person doesn't think or write like that.
 
-Output ONLY the rewritten text. First word of response = first word of text.
+Your job is to do two things at once:
+
+1. RESTRUCTURE IT — rebuild the organization to match how this person actually thinks:
+   - If they front-load conclusions, start with the point and explain after
+   - If they tell stories, frame this as a story or personal experience
+   - If they mix opinions with facts, weave them together instead of separating them
+   - If they jump around, don't follow the original order strictly
+   - If they address the reader, talk to the reader
+   - Don't give each idea its own clean paragraph — let ideas bleed into each other
+   - Don't wrap up each point with a summary sentence — move on when the thought is done
+   - Start somewhere that feels natural for THIS person, not at the beginning of the topic
+
+2. REWRITE IN THEIR VOICE — every sentence should sound like them:
+   - Their rhythm, their word choices, their tone
+   - Their way of connecting one idea to the next
+   - Their personality showing through
+
+PRESERVE: Every fact, idea, and argument must still be there. Restructure and rephrase — don't cut content.
+
+Output ONLY the rewritten text. No intro, no label. First word of response = first word of text.
 
 Text:\n\n${text}`;
 }
 
+// ============================================================
+// HUMANIZE USER PROMPT — second pass, more personal
+// ============================================================
 function buildHumanizeUserPrompt(text) {
-  return `This is already written in this person's voice. Your job is to make it sound MORE like them — more natural, less polished, more the way they actually talk and think.
+  return `This is written in this person's voice but it still reads slightly AI. Make it more authentically them.
 
-Find any sentence that still sounds slightly formal or generic and make it more personal and specific. Find any place where the rhythm feels too smooth and break it up. Add a bit more of their natural imperfections — the way they actually write, not the way a textbook says to write.
+Find the parts that still feel too clean, too organized, or too generic. For each one:
+- If a sentence wraps up an idea too neatly, break it or trail off
+- If a paragraph follows a too-obvious structure, disrupt it
+- If an opinion is stated without personality behind it, add the specific reason this person would have
+- If two or three sentences are the same length in a row, break the rhythm
 
-Keep every idea. Keep every fact. Just make it more authentically them.
+The goal is not to make it worse — it's to make it feel more like this person actually sat down and typed it without overthinking.
 
+Keep every fact and argument. Keep full depth.
 Output ONLY the result. First word of response = first word of text.
 
 Text:\n\n${text}`;
 }
+
 
 // ============================================================
 // STEP 2 — POST-PROCESSOR
@@ -501,38 +634,44 @@ app.post("/analyze", async (req, res) => {
       .map((s, i) => `--- Sample ${i + 1}: ${s.label || "Untitled"} ---\n${s.text}`)
       .join("\n\n");
 
-    const systemPrompt = `You are a forensic writing analyst and AI-detection expert. Your job is to extract a writer's deep personality, creativity patterns, syntax habits, and emotional signature from their real writing samples — specifically the qualities that make writing feel genuinely human rather than AI-generated. Be extremely specific. Quote actual phrases as evidence. Output ONLY the sections requested.`;
+    const systemPrompt = `You are a forensic writing analyst specializing in voice, structure, and thinking patterns. Extract how this person writes AND how they organize their ideas — both are equally important. Your job is to extract a writer's deep personality, creativity patterns, syntax habits, and emotional signature from their real writing samples — specifically the qualities that make writing feel genuinely human rather than AI-generated. Be extremely specific. Quote actual phrases as evidence. Output ONLY the sections requested.`;
 
-    const userPrompt = `Analyze these writing samples and extract a complete human writing fingerprint. Output ONLY these sections, nothing else:
+    const userPrompt = `Analyze these writing samples deeply. Output ONLY these sections:
 
 ${samplesText}
 
 VOICE & PERSONALITY:
-What is this person's genuine voice — not their topic, but HOW they think and express themselves? What makes them sound like a real person and not an AI? Quote one phrase that captures their personality perfectly.
+What is this person's genuine voice — not their topic but HOW they think and express themselves? What makes them sound like a real human not an AI? Quote one phrase that captures their personality perfectly.
 
-CREATIVITY & ORIGINALITY MARKERS:
-Does this writer use metaphors, comparisons, or images from their own life? Do they make unexpected connections? Do they have opinions that feel genuinely theirs, not generic? Quote specific examples. This is what GPTZero calls "creativity" — the opposite of generic AI writing.
+THINKING STRUCTURE (critical — this is what AI detectors flag most):
+How does this person organize their ideas? Be extremely specific:
+- Do they front-load the point or build toward it?
+- Do they think linearly (A→B→C) or associatively (jumping between connected ideas)?
+- Do they mix their personal opinions in with facts, or keep them separate?
+- Do they use personal stories/memories as evidence or stay abstract?
+- Do they address the reader directly ("you should...") or write in third person?
+- How do they open a piece — with a statement, a question, mid-thought, a memory?
+- How do they close — clean conclusion, trailing off, abruptly, with a question?
+- Do they go on tangents? Do they self-correct mid-thought?
+Quote specific examples from the samples for each habit you identify.
 
-SYNTAX VARIETY PATTERNS:
-How do they vary their sentence structure? Do they start sentences with conjunctions (But, And, So)? Do they use fragments? Do they answer their own questions? Do they use parenthetical asides? Do they contradict themselves slightly? Quote examples of their most varied and interesting sentence structures.
+SYNTAX & RHYTHM PATTERNS:
+How do they vary sentence structure — not just length but TYPE? Do they use fragments? Questions they answer themselves? Sentences starting with "But" or "And"? Run-ons? Parenthetical asides? Repetition for emphasis? Quote the most distinctive examples.
 
-EMOTIONAL AUTHENTICITY:
-How does this person express genuine emotion, opinion, or personal stake in what they're writing? Do they admit confusion, excitement, frustration? Do they share personal memories or specific experiences? Quote examples. This is what makes writing feel warm rather than "detached warmth."
-
-ARGUMENT & THINKING STYLE:
-Does this person frontload their point or build to it? Do they think through problems out loud? Do they use personal examples as evidence rather than abstract claims? Do they go on tangents and come back? How do they connect one idea to the next in a way that feels like a real person's train of thought?
+PERSONALITY & EMOTION:
+How does this person's actual personality show in their writing? Where do they admit uncertainty, show excitement, express frustration? Where does their voice feel most alive and least like a robot? Quote specific moments.
 
 NATURAL IMPERFECTIONS:
-What are the small human habits in their writing — the "or something" at the end of a thought, the "I mean" mid-sentence, the sentence that runs a little long, the casual aside? These are exactly what AI detectors look for as proof of humanity. Quote specific examples.
+What are the small human habits — "or something", "I mean", casual asides, sentences that run long, self-corrections? Quote real examples from the samples.
 
-WHAT THIS PERSON NEVER DOES:
-What AI writing habits are completely absent from their samples? (e.g. never uses "Furthermore", never wraps up paragraphs with a clean summary sentence, never uses passive voice) Be specific — these are just as important as what they do.
+WHAT THEY NEVER DO:
+What AI habits are completely absent? Be specific — never uses "Furthermore"? Never wraps paragraphs with a summary? Never uses passive voice? These negatives are just as important.
 
-THEIR EXACT TRANSITIONS:
-List the exact words and phrases this person uses to move between ideas. Not AI transitions — their actual ones. Quote them directly.
+THEIR TRANSITIONS:
+List the exact phrases this person uses to move between ideas. Not AI transitions — their actual words. Quote them directly from the samples.
 
 CLONING INSTRUCTIONS:
-Write 3 paragraphs to an AI that will write as this person. Cover: (1) their overall personality and how it comes through in writing, (2) their specific syntax habits and creativity patterns, (3) the single most important thing to get right to avoid sounding like AI when imitating them. Be extremely specific and actionable.`;
+Write 3 paragraphs to an AI that will imitate this person covering: (1) their voice and personality, (2) their STRUCTURE — how they organize thinking, because this is what AI detectors flag most, (3) the single most important thing to nail to avoid sounding like AI when writing as them.`;
 
     const rawBlueprint = await callGroq(systemPrompt, userPrompt, 1500);
 
