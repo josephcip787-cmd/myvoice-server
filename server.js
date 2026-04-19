@@ -77,92 +77,131 @@ async function callGroq(systemPrompt, userPrompt, maxTokens = 2000, temperature 
 }
 
 // ============================================================
-// LOCAL STYLE DNA — hard metrics extracted from raw text
-// These concrete numbers get injected into every Groq prompt
-// so the model has a real mathematical fingerprint, not just vibes
+// DEEP STYLE DNA — extracts everything GPTZero actually measures
+// Goes beyond sentence length into syntax variety, creativity
+// markers, emotional warmth, argument structure, literary devices
 // ============================================================
 function extractStyleDNA(samples) {
   const allText = samples.map(s => s.text).join(" ");
-  const sentences = allText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 5);
+  const sentences = allText.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 5);
   const words = allText.toLowerCase().match(/\b[a-z']+\b/g) || [];
   const sentenceCount = Math.max(sentences.length, 1);
+  const wordCount = Math.max(words.length, 1);
 
-  // Sentence length
+  // ---- Sentence length distribution ----
   const lengths = sentences.map(s => s.split(/\s+/).length);
-  const avgLen = lengths.length ? Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length) : 15;
+  const avgLen = Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
+  const minLen = Math.min(...lengths);
+  const maxLen = Math.max(...lengths);
   const shortCount = lengths.filter(l => l <= 8).length;
   const longCount = lengths.filter(l => l >= 25).length;
+  const medCount = lengths.filter(l => l > 8 && l < 25).length;
+  const variance = Math.round(lengths.reduce((acc, l) => acc + Math.pow(l - avgLen, 2), 0) / lengths.length);
   const rhythmLabel =
-    shortCount > longCount * 2 ? "punchy and short — mostly under 10 words" :
-    longCount > shortCount * 2 ? "sprawling and detailed — often 25+ words" :
-    "varied — mixes short punchy lines with longer flowing ones";
+    shortCount > longCount * 2 ? "punchy — mostly short sentences under 10 words" :
+    longCount > shortCount * 2 ? "flowing — often long sentences over 25 words" :
+    variance > 40 ? "wildly varied — unpredictable mix of very short and very long" :
+    "balanced — mixes short and medium sentences";
 
-  // Vocabulary
+  // ---- Syntax variety (what GPTZero calls "Monotonous Syntax") ----
+  const startsWithI = sentences.filter(s => /^I\s/i.test(s)).length;
+  const startsWithBut = sentences.filter(s => /^(But|And|So|Because|Yet|Or)\s/i.test(s)).length;
+  const startsWithTime = sentences.filter(s => /^(When|After|Before|While|Once|As|Then)\s/i.test(s)).length;
+  const startsWithIt = sentences.filter(s => /^(It|That|This|There)\s/i.test(s)).length;
+  const startsWithVerb = sentences.filter(s => /^(Getting|Having|Doing|Being|Taking|Making|Looking|Going)\s/i.test(s)).length;
+  const declarativeCount = sentences.filter(s => /\.$/.test(s.trim())).length;
+  const questionCount = sentences.filter(s => /\?$/.test(s.trim())).length;
+  const exclamCount = sentences.filter(s => /!$/.test(s.trim())).length;
+
+  // ---- Rhythm patterns (GPTZero: "Predictable Rhythm") ----
+  // Detect if writer uses same length repeatedly
+  let rhythmRepeat = 0;
+  for (let i = 1; i < lengths.length; i++) {
+    if (Math.abs(lengths[i] - lengths[i-1]) <= 3) rhythmRepeat++;
+  }
+  const rhythmRepeatRate = Math.round((rhythmRepeat / sentenceCount) * 100);
+
+  // ---- Creativity markers (GPTZero: "Lacks Creativity") ----
+  const metaphors = (allText.match(/\b(like|as if|as though|feels like|seems like|reminds me|kind of like|sort of like)\b/gi) || []).length;
+  const personalMemories = (allText.match(/\b(I remember|I recall|back when|one time|I used to|growing up|when I was|I once)\b/gi) || []).length;
+  const selfCorrections = (allText.match(/\b(I mean|well|actually|honestly|or rather|you know|I guess|kind of|sort of)\b/gi) || []).length;
+  const rhetoricalQs = questionCount;
+  const tangents = (allText.match(/\b(by the way|speaking of|that reminds me|which is funny|the weird thing|the thing is)\b/gi) || []).length;
+  const opinions = (allText.match(/\b(I think|I feel|I believe|I don't know|I wonder|I get|in my opinion|to me|for me)\b/gi) || []).length;
+
+  // ---- Emotional warmth (GPTZero: "Detached Warmth") ----
+  const warmthWords = (allText.match(/\b(love|hate|excited|nervous|scared|happy|sad|frustrated|proud|worried|amazed|honestly|actually|really|feel|felt|emotion|heart|care|matter)\b/gi) || []).length;
+  const personalPronouns = (allText.match(/\b(I|me|my|mine|myself|we|us|our)\b/gi) || []).length;
+  const warmthScore = Math.round(((warmthWords + personalPronouns) / wordCount) * 100);
+
+  // ---- Vocabulary profile ----
   const uniqueWords = new Set(words);
-  const vocabRichness = words.length ? Math.round((uniqueWords.size / words.length) * 100) : 50;
-  const avgWordLen = words.length ? Math.round(words.reduce((a, w) => a + w.length, 0) / words.length) : 5;
+  const vocabRichness = Math.round((uniqueWords.size / wordCount) * 100);
+  const avgWordLen = Math.round(words.reduce((a, w) => a + w.length, 0) / wordCount);
+  const longWords = words.filter(w => w.length > 8).length;
+  const longWordRate = Math.round((longWords / wordCount) * 100);
 
-  // Contractions
-  const contractionMatches = (allText.match(/\b(don't|doesn't|can't|won't|it's|i'm|i've|i'd|i'll|we're|we've|they're|you're|you've|isn't|aren't|wasn't|weren't|hasn't|haven't|hadn't|wouldn't|shouldn't|couldn't|that's|there's|here's|let's|who's|what's)\b/gi) || []).length;
-  const contractionRate = words.length ? Math.round((contractionMatches / words.length) * 100) : 0;
+  // ---- Contractions ----
+  const contractionMatches = (allText.match(/\b(don't|doesn't|can't|won't|it's|i'm|i've|i'd|i'll|we're|we've|they're|you're|you've|isn't|aren't|wasn't|weren't|hasn't|haven't|hadn't|wouldn't|shouldn't|couldn't|that's|there's|here's|let's|who's|what's|didn't|couldn't|she's|he's)\b/gi) || []).length;
+  const contractionRate = Math.round((contractionMatches / wordCount) * 100);
   const contractionLabel =
-    contractionRate > 8 ? "heavy — writes the way they talk" :
-    contractionRate > 3 ? "moderate — semi-casual" :
-    "rare — leans more formal";
+    contractionRate > 8 ? "heavy — writes exactly how they talk" :
+    contractionRate > 3 ? "moderate — relaxed and semi-casual" :
+    "rare — tends toward more formal phrasing";
 
-  // Punctuation
+  // ---- Punctuation fingerprint ----
   const exclamations = (allText.match(/!/g) || []).length;
   const questions = (allText.match(/\?/g) || []).length;
   const ellipses = (allText.match(/\.\.\./g) || []).length;
   const dashes = (allText.match(/[—\-]{1,2}/g) || []).length;
   const commas = (allText.match(/,/g) || []).length;
+  const semicolons = (allText.match(/;/g) || []).length;
   const punctuationNotes = [
-    exclamations / sentenceCount > 0.3 ? "uses exclamation marks often" : null,
-    ellipses / sentenceCount > 0.2 ? "uses ellipses for trailing or unfinished thoughts" : null,
-    dashes / sentenceCount > 0.3 ? "uses dashes heavily for asides and interruptions" : null,
-    questions / sentenceCount > 0.2 ? "asks rhetorical questions frequently" : null,
-    commas / sentenceCount > 2 ? "comma-heavy — stacks clauses" : null,
-  ].filter(Boolean).join("; ") || "standard punctuation — no strong habits";
+    exclamations / sentenceCount > 0.3 ? "uses exclamation marks freely" : null,
+    ellipses / sentenceCount > 0.15 ? "uses ellipses — thoughts trail off naturally" : null,
+    dashes / sentenceCount > 0.3 ? "uses dashes for asides and interruptions" : null,
+    questions / sentenceCount > 0.15 ? "asks questions — rhetorical and real" : null,
+    commas / sentenceCount > 2.5 ? "comma-heavy — stacks clauses and lists" : null,
+    semicolons > 3 ? "uses semicolons to connect related thoughts" : null,
+  ].filter(Boolean).join("; ") || "clean punctuation — no dramatic habits";
 
-  // Formality
-  const formalWords = (allText.match(/\b(therefore|moreover|furthermore|subsequently|nevertheless|accordingly|consequently|albeit|notwithstanding|utilize|facilitate|implement|leverage|regarding|pertaining)\b/gi) || []).length;
-  const casualWords = (allText.match(/\b(kinda|sorta|gonna|wanna|gotta|tbh|ngl|lowkey|highkey|literally|basically|honestly|like|just|really|super|totally|pretty|stuff|yeah|yep|nope|okay)\b/gi) || []).length;
+  // ---- Formality ----
+  const formalWords = (allText.match(/\b(therefore|moreover|furthermore|subsequently|nevertheless|accordingly|consequently|albeit|notwithstanding|utilize|facilitate|implement|leverage|regarding|pertaining|demonstrate|indicate|significant|substantial|numerous|considerable)\b/gi) || []).length;
+  const casualWords = (allText.match(/\b(kinda|sorta|gonna|wanna|gotta|tbh|ngl|lowkey|literally|basically|honestly|like|just|really|super|totally|pretty|stuff|yeah|yep|nope|okay|cool|crazy|huge|wild|nuts)\b/gi) || []).length;
   let formalityScore = 50 + (formalWords * 5) - (casualWords * 3) - (contractionRate * 2);
   formalityScore = Math.max(0, Math.min(100, formalityScore));
 
-  // Fragment rate
-  const fragments = sentences.filter(s => s.split(/\s+/).length <= 4).length;
-  const fragmentRate = Math.round((fragments / sentenceCount) * 100);
+  // ---- Argument/structure style ----
+  const usesExamples = (allText.match(/\b(for example|for instance|like when|such as|one time|I remember when)\b/gi) || []).length;
+  const frontLoads = sentences.filter((s, i) => {
+    if (i === 0) return false;
+    const prev = sentences[i-1];
+    return prev && prev.split(/\s+/).length < 10 && s.split(/\s+/).length > 20;
+  }).length;
+  const buildsToPoint = sentences.filter((s, i) => {
+    if (i < 2) return false;
+    return /\b(so|which means|that's why|this is why|because of this|and that's)\b/i.test(s);
+  }).length;
 
-  // Top signature words (skip stopwords)
-  const stopwords = new Set(["the","a","an","and","or","but","in","on","at","to","for","of","with","is","are","was","were","be","been","being","have","has","had","do","does","did","will","would","could","should","may","might","shall","can","i","you","he","she","it","we","they","me","him","her","us","them","my","your","his","its","our","their","this","that","these","those","what","which","who","when","where","why","how","all","each","every","not","no","so","if","as","by","from","up","about","than","then","just","also","there","here","very","more","some","any","only","out","into","get","got","go","going"]);
-  // Build per-sample word sets to identify cross-sample style words
-  // Words that only appear in ONE sample are likely topic-specific (e.g. "grandpa")
-  // Words that appear across MULTIPLE samples are true style fingerprint words
-  const sampleWordSets = samples.map(s => {
-    const sWords = (s.text.toLowerCase().match(/\b[a-z']+\b/g) || []);
-    return new Set(sWords);
-  });
+  // ---- Literary devices ----
+  const similes = (allText.match(/\b(like a|like an|like the|as a|as if|as though)\b/gi) || []).length;
+  const repetition = (allText.match(/\b(\w+)\s+\1\b/gi) || []).length;
+  const directAddress = (allText.match(/\b(you|your|yourself)\b/gi) || []).length;
 
+  // ---- Signature style words (cross-sample only) ----
+  const stopwords = new Set(["the","a","an","and","or","but","in","on","at","to","for","of","with","is","are","was","were","be","been","being","have","has","had","do","does","did","will","would","could","should","may","might","shall","can","i","you","he","she","it","we","they","me","him","her","us","them","my","your","his","its","our","their","this","that","these","those","what","which","who","when","where","why","how","all","each","every","not","no","so","if","as","by","from","up","about","than","then","just","also","there","here","very","more","some","any","only","out","into","get","got","go","going","like","one","know","think","feel","time","way","make","take","come","see","look","want","give","use","find","tell","work","call","try","ask","need","seem","leave","show","keep","let","begin","long","never","always","often","back","still","around","even","well","new","good","old","right","big","high","different","small","large","next","early","young","important","few","public","bad","same","able"]);
+
+  const sampleWordSets = samples.map(s => new Set((s.text.toLowerCase().match(/\b[a-z']+\b/g) || [])));
   const wordFreq = {};
-  words.forEach(w => { if (!stopwords.has(w) && w.length > 2) wordFreq[w] = (wordFreq[w] || 0) + 1; });
-
-  // Count how many samples each word appears in
-  const wordSampleCount = {};
-  Object.keys(wordFreq).forEach(w => {
-    wordSampleCount[w] = sampleWordSets.filter(s => s.has(w)).length;
-  });
-
-  // Only keep words that appear in at least 2 samples (true style words, not topic words)
-  // Exception: if there's only 1 sample, fall back to frequency-based selection
+  words.forEach(w => { if (!stopwords.has(w) && w.length > 3) wordFreq[w] = (wordFreq[w] || 0) + 1; });
   const minSamples = samples.length > 1 ? 2 : 1;
   const topWords = Object.entries(wordFreq)
-    .filter(([w]) => wordSampleCount[w] >= minSamples)
+    .filter(([w]) => sampleWordSets.filter(s => s.has(w)).length >= minSamples)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 20)
+    .slice(0, 15)
     .map(([w]) => w);
 
-  // Top recurring phrases (2–3 word combos)
+  // ---- Recurring phrase patterns ----
   const phraseFreq = {};
   for (let i = 0; i < words.length - 2; i++) {
     const [w1, w2, w3] = [words[i], words[i+1], words[i+2]];
@@ -180,329 +219,241 @@ function extractStyleDNA(samples) {
     .map(([p]) => p);
 
   return {
-    avgLen, rhythmLabel, vocabRichness, avgWordLen,
-    contractionRate, contractionLabel, punctuationNotes, formalityScore,
-    fragmentRate, topWords, topPhrases,
+    // Sentence rhythm
+    avgLen, minLen, maxLen, variance, rhythmLabel,
+    shortCount, medCount, longCount, sentenceCount,
+    rhythmRepeatRate,
+    // Syntax variety
+    startsWithIRate: Math.round((startsWithI / sentenceCount) * 100),
+    startsWithConjRate: Math.round((startsWithBut / sentenceCount) * 100),
+    startsWithTimeRate: Math.round((startsWithTime / sentenceCount) * 100),
+    questionRate: Math.round((questionCount / sentenceCount) * 100),
+    exclamRate: Math.round((exclamCount / sentenceCount) * 100),
+    // Creativity markers
+    metaphorRate: Math.round((metaphors / sentenceCount) * 100),
+    personalMemoryCount: personalMemories,
+    selfCorrectionCount: selfCorrections,
+    tangentCount: tangents,
+    opinionCount: opinions,
+    hasLiteraryDevices: similes > 2 || repetition > 1,
+    directAddressRate: Math.round((directAddress / wordCount) * 100),
+    // Warmth & personality
+    warmthScore, contractionRate, contractionLabel,
+    // Vocabulary
+    vocabRichness, avgWordLen, longWordRate,
+    // Punctuation
+    punctuationNotes,
     exclamationsPerSentence: Math.round((exclamations / sentenceCount) * 10) / 10,
     ellipsesPerSentence: Math.round((ellipses / sentenceCount) * 10) / 10,
     dashesPerSentence: Math.round((dashes / sentenceCount) * 10) / 10,
+    // Formality & structure
+    formalityScore,
+    usesExamples: usesExamples > 1,
+    buildsToPoint: buildsToPoint > 1,
+    // Signature patterns
+    topWords, topPhrases,
+    // Fragment rate
+    fragmentRate: Math.round((sentences.filter(s => s.split(/\s+/).length <= 4).length / sentenceCount) * 100),
   };
 }
 
 // ============================================================
-// THE CORE REWRITE SYSTEM PROMPT v7.0
-// "The pattern that isn't a pattern"
-//
-// WHAT WE DISCOVERED FROM ANALYZING REAL HUMAN ESSAYS
-// THAT SCORE 0% AI ON GPTZERO:
-//
-// These are UNIVERSAL laws of human writing — not tied to
-// any one person's style. We apply them on top of whoever's
-// fingerprint we receive. Every user gets the same invisible
-// skeleton underneath their own voice.
-//
-// LAW 1 — SHORT WORDS (avg 4.0 chars, AI avg 5.5)
-//   "get" not "obtain". "show" not "demonstrate".
-//   "big" not "significant". "a lot of" not "numerous".
-//
-// LAW 2 — USE "I" (humans: 36% of sentences. AI: almost 0%)
-//   AI avoids "I" — it feels too informal. Real people don't.
-//
-// LAW 3 — CHAOTIC SENTENCE LENGTHS (the pattern that isn't)
-//   Real sequence: 14, 16, 5, 10, 13, 21, 18, 4, 5, 24, 28, 31
-//   AI sequence:   16, 18, 15, 19, 17, 20, 18, 16, 19, 17
-//   The chaos IS the pattern. No two consecutive sentences
-//   should be within 5 words of each other in length.
-//
-// LAW 4 — HUMAN TRANSITIONS (high perplexity to detectors)
-//   "That's when", "But then", "Then", "So", "And honestly",
-//   "This is why", "The thing is", "I think", "I feel"
-//   NOT: "Furthermore", "Moreover", "Additionally" — ever.
-//
-// LAW 5 — SPECIFIC PERSONAL DETAILS = instant human signal
-//   "dropped my backpack by the door, grabbed a snack"
-//   GPTZero cannot flag specifics. They have maximum perplexity.
-//
-// LAW 6 — NATURAL IMPERFECTIONS raise perplexity
-//   "or something", "like normal", starting with "But" or "And",
-//   a run-on that flows naturally, "I think" as a sentence opener
+// SYSTEM PROMPT v8.0
+// Built directly from GPTZero's "Why is this text AI?" panel:
+// Generic First-Person | Monotonous Syntax | Predictable Rhythm
+// Artificial Simplicity | Lacks Creativity | Mechanical Writing
+// Detached Warmth | Rigid Guidance | Predictable Syntax
+// We fix each one explicitly. The deep DNA + blueprint tell us
+// HOW this specific person writes. The rules below tell us how
+// to make it genuinely human on top of their voice.
 // ============================================================
 function buildSystemPrompt(dna, rawBlueprint, humanizeMode = false) {
 
   const dnaBlock = dna ? `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THIS PERSON'S VOICE FINGERPRINT
+THIS PERSON'S MEASURED WRITING FINGERPRINT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Sentence rhythm: ${dna.rhythmLabel}
-Average sentence length: ${dna.avgLen} words
-Fragment rate: ${dna.fragmentRate}% are 4 words or fewer
+Length range: ${dna.minLen} to ${dna.maxLen} words | Average: ${dna.avgLen} | Variance: ${dna.variance}
+Short (≤8w): ${dna.shortCount} | Medium: ${dna.medCount} | Long (25+w): ${dna.longCount}
+Rhythm repeat rate: ${dna.rhythmRepeatRate}% of consecutive sentences similar length
+
+Syntax variety:
+- Starts with "I": ${dna.startsWithIRate}% of sentences
+- Starts with conjunction (But/And/So): ${dna.startsWithConjRate}%
+- Questions: ${dna.questionRate}% | Exclamations: ${dna.exclamRate}%
+
+Creativity markers:
+- Metaphors/comparisons per 100 sentences: ${dna.metaphorRate}
+- Personal memories: ${dna.personalMemoryCount} | Self-corrections: ${dna.selfCorrectionCount}
+- Opinion markers (I think/feel/believe): ${dna.opinionCount}
+- Literary devices present: ${dna.hasLiteraryDevices ? "yes" : "minimal"}
+
+Warmth: ${dna.warmthScore}/100 | Formality: ${dna.formalityScore}/100
 Contractions: ${dna.contractionLabel} (${dna.contractionRate}%)
-Formality: ${dna.formalityScore}/100
+Avg word length: ${dna.avgWordLen} chars | Long words (8+): ${dna.longWordRate}%
 Punctuation: ${dna.punctuationNotes}
-Avg word length: ${dna.avgWordLen} chars
-Style connectors (NOT topic nouns from samples):
-  ${dna.topWords.length ? dna.topWords.join(", ") : "none detected"}
+Signature style words: ${dna.topWords.length ? dna.topWords.join(", ") : "none detected"}
 ` : "";
 
   const pushHarderBlock = humanizeMode ? `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECOND PASS — PUSH HARDER
+SECOND PASS — TARGET WHAT'S STILL FLAGGED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Still flagged. Go harder on every law:
-- Find every word over 6 characters. Is there a shorter,
-  more natural version? Use it.
-- Find any two consecutive sentences within 5 words of each
-  other in length. Break one — make it much shorter or longer.
-- Add one more "I" sentence opener somewhere natural.
-- Replace any transition that still sounds formal.
-- The writing must stay good. Natural human, not broken human.
+Still flagged. The remaining AI signals are almost always:
+clean wrap-up sentences, generic observations stated without
+personality, and two or three consecutive sentences of similar
+length. Find every one of those and break them. Make wrap-ups
+messier or cut them. Make generic observations personal and
+specific. Disrupt any rhythm that has settled into a pattern.
 ` : "";
 
-  return `You are a writing style cloner. Rewrite the given text so it:
-1. Sounds exactly like this specific person wrote it
-2. Passes GPTZero and ZeroGPT as human-written
-3. Maintains full quality — good writing that happens to be human
+  return `You are a writing style cloner. Rewrite text so it sounds exactly like this specific person wrote it AND passes GPTZero/ZeroGPT as human. Good writing that is genuinely human — not mechanical rules, real personality.
 
-Output ONLY the rewritten text. No intro, no label. First word of your response = first word of the rewritten text.
+Output ONLY the rewritten text. No intro, no label. First word of response = first word of text.
 
 ${dnaBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THE 6 UNIVERSAL LAWS OF HUMAN WRITING
-Apply ALL of these on top of this person's voice fingerprint.
+FIX EACH GPTZERO FLAG — THESE ARE WHAT YOU ARE FIGHTING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-LAW 1 — SHORT WORDS (this is the #1 GPTZero signal)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Real humans average 4.0 character words. AI averages 5.5+.
-GPTZero measures this directly on every word in the text.
+❌ GENERIC FIRST-PERSON → needs real personality behind every "I"
+"I think X is important" = generic, still flagged
+"I think X matters because I've seen what happens without it" = human
+Every opinion needs a reason, a memory, or a personal angle behind it.
+Never state an opinion without something specific backing it up.
 
-For every word you write, ask: is there a shorter, more
-natural version a real person would just say? Use that.
+❌ MONOTONOUS SYNTAX → vary structure TYPE not just length
+AI defaults to: Subject + Verb + Object, every sentence.
+Mix in: fragments. Questions the writer answers themselves.
+Sentences starting with "When" or "After" or "Because."
+Parenthetical asides (like this one). Run-ons where the thought
+just keeps going because it isn't finished yet. Clauses stacked
+with commas. Starting with "But" or "And" for punch.
 
-USE THIS          NOT THIS
-get / got         obtain / acquire / attain
-show              demonstrate / illustrate
-use               utilize / leverage / employ
-big / large       significant / substantial / considerable
-help              facilitate / assist / aid
-start             commence / initiate / begin (begin is ok)
-end               conclude / terminate / finalize
-try               attempt / endeavor / strive
-need              require / necessitate
-think             consider / contemplate / deliberate
-say / said        indicate / articulate / stated
-make              generate / produce (unless natural)
-real / actual     significant / notable / meaningful
-a lot of          numerous / multiple / various / several
-stuff / things    elements / factors / aspects / components
-good              beneficial / advantageous / favorable
-bad               detrimental / problematic / unfavorable
-look at           examine / analyze / assess
-find out          determine / ascertain / identify
-deal with         address / manage / handle (handle is ok)
-so / which means  therefore / consequently / thus / hence
-but               however / nevertheless / nonetheless
-and               furthermore / moreover / additionally
-"I think"         "it can be argued" / "one might suggest"
-"a lot"           "a significant amount" / "considerably"
-"or something"    KEEP IT — humans say this, AI never does
-"like normal"     KEEP IT — AI would never write this
-"the thing is"    KEEP IT — pure human connector
+❌ PREDICTABLE RHYTHM → chaotic length sequence
+Target: 5, 19, 7, 3, 31, 11, 4, 28, 8, 22, 3, 35
+After a short sentence, write a long one. After a long one,
+write a fragment. The contrast creates genuine burstiness.
+Every paragraph needs at least one sentence under 7 words
+AND at least one sentence over 25 words.
 
-LAW 2 — USE "I" CONSTANTLY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Real humans start ~30-40% of sentences with "I".
-AI almost never does — it was trained to avoid it.
-This avoidance is itself a major detector flag.
+❌ LACKS CREATIVITY → one real image or comparison per paragraph
+"Training is hard" = no creativity, flagged
+"Training is the kind of thing where skipping one day makes
+the next one feel like starting over" = creative, human
+Use: "It's like when...", "The best way I can describe it is...",
+"It reminds me of...", "Think of it as..." — one per paragraph minimum.
 
-Start sentences with "I" naturally throughout:
-"I think...", "I remember...", "I feel like...",
-"I knew...", "I didn't...", "I was...", "I grabbed...",
-"I wasn't sure...", "I had to...", "I get it..."
+❌ MECHANICAL WRITING → add literary devices naturally
+At least 2-3 across the full rewrite:
+• A rhetorical question the writer then answers
+• A word/phrase repeated for emphasis ("Not just hard. Actually hard.")
+• A sentence starting with "And" or "But" for punch
+• A moment of admitted uncertainty: "I'm not sure why, but..."
+• A thought that trails off slightly before moving on
 
-Match the rate in this person's fingerprint.
-If their formality is high, use "I" less. If casual, freely.
+❌ DETACHED WARMTH → real emotional stake, not performed warmth
+"This is important to me" = detached warmth, still flagged
+"This is the part I actually had to think about for a while" = real
+One moment per piece where the writer's actual feeling shows —
+confusion, excitement, surprise, frustration — stated specifically.
 
-LAW 3 — THE SENTENCE LENGTH PATTERN THAT ISN'T A PATTERN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-This is the core of burstiness. Real human sentence lengths
-look like: 14, 16, 5, 10, 13, 21, 18, 4, 5, 24, 14, 28, 31
-
-AI sentence lengths look like: 17, 19, 16, 18, 20, 17, 19
-
-The chaos is the point. No two consecutive sentences should
-be within 5 words of each other if you can avoid it.
-
-HARD RULES for every paragraph you write:
-- At least one sentence must be 4-7 words (can be 2-3)
-- At least one sentence must be 25+ words
-- No three sentences in a row within 5 words of each other
-- The sequence must feel unpredictable, not rhythmic
-
-Short sentences that score as human:
-"Something was definitely there."    [4 words]
-"That's when I saw it."              [5 words]
-"I wasn't losing my mind."           [5 words]
-"This is why."                       [3 words]
-"It worked."                         [2 words]
-"I had enough."                      [3 words]
-"And that was it."                   [4 words]
-
-Then immediately follow with a long one — that contrast
-is exactly what GPTZero scores as high burstiness.
-
-LAW 4 — HUMAN TRANSITIONS ONLY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HUMAN (high perplexity, use freely):
-"That's when"      "But then"         "Then"
-"So"               "And"              "But"
-"Because of this"  "This is why"      "The thing is"
-"And honestly"     "I think"          "I feel like"
-"Like [name] said" "Think about"      "Here's the thing"
-"Which means"      "That's the part"  "It's like"
-"What happened was" "The reason is"   "That said"
-
-AI (low perplexity, instant flags — NEVER USE):
-Furthermore    Moreover       Additionally   In addition
-In conclusion  To summarize   In summary     To elaborate
-It is worth noting            It is important to note
-It's crucial to understand    Notably        Significantly
-Subsequently   Consequently   Having said that
-With that being said          It goes without saying
-Needless to say               Last but not least
-First and foremost            At the end of the day
-All things considered         This highlights
-This demonstrates             This underscores
-This suggests                 One might argue
-It could be said              To some extent
-It is generally accepted      Broadly speaking
-This illustrates              Plays a crucial role
-
-LAW 5 — SPECIFIC DETAILS CREATE MAXIMUM PERPLEXITY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GPTZero measures perplexity word by word. Specific, concrete
-details that a human would know from lived experience have
-maximum perplexity — no language model would generate them.
-
-When this person's voice calls for examples or evidence,
-make them concrete and specific, not abstract and general:
-
-NOT: "This experience taught me something important"
-YES: "That's still something I think about"
-
-NOT: "Research suggests relationships require communication"
-YES: "If people didn't talk to me when I first got there,
-     I wouldn't have made a single friend"
-
-NOT: "People often experience this in various contexts"
-YES: "I remember one time in kindergarten"
-
-Specificity = high perplexity = human signal.
-
-LAW 6 — NATURAL IMPERFECTIONS RAISE PERPLEXITY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-AI is trained to be grammatically clean. That cleanliness
-is itself a flag. Real humans write like this:
-
-- Starting sentences with "But", "And", "So", "Because"
-- A run-on that connects two thoughts naturally with "and"
-- "or something" at the end of a casual thought
-- "like normal" instead of "as usual"
-- "I think" as a sentence opener (AI avoids this)
-- "I feel like" before stating an opinion
-- Repeating a word naturally ("home to my home planet")
-- A sentence that trails off and picks back up with "but"
-
-These are NOT grammar errors. They are the statistical
-fingerprint of a real person not overthinking their writing.
-Include at least 2-3 of these per rewrite naturally.
+❌ RIGID STRUCTURE → break Topic→Explanation→Conclusion
+Start a paragraph with the conclusion, then explain it.
+Let one paragraph be two sentences and nothing else.
+End a paragraph with a question instead of a statement.
+Let one idea bleed into the next without a clean break.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NON-NEGOTIABLE RULES
+BANNED — INSTANT AI FLAGS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Preserve EVERY fact, idea, argument, detail — nothing cut
-- Preserve full intellectual depth — never simplify ideas
-- No actual grammar errors — only intentional human patterns
-- Match this person's tone, energy, and confidence exactly
+Furthermore / Moreover / Additionally / In addition
+In conclusion / To summarize / In summary / Notably
+It is worth noting / It is important to note / Significantly
+Subsequently / Consequently / Having said that
+With that being said / It goes without saying
+This highlights / This demonstrates / This underscores
+This suggests / One might argue / Broadly speaking
+"X is more than just Y" / "That's when I realized"
+"not just about X, it's about Y" / "It's about X, Y, and Z"
+Any clean paragraph-ending summary sentence
+obtain/acquire | demonstrate | utilize/leverage | facilitate
+significant/substantial | numerous | commence | endeavor
+individuals (use "people") | implement | pertaining
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HUMAN TRANSITIONS — USE THESE INSTEAD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+So / But / And / Because / Which is why / That's why
+The thing is / And honestly / Here's the thing
+What I mean is / The weird part is / What actually happens
+I think the reason is / What gets me is / That said
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NON-NEGOTIABLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Every fact, idea, and argument preserved — nothing cut or added
+- Full intellectual depth maintained — never simplify ideas
+- Match this person's tone, formality, and energy exactly
+- No actual grammar errors — intentional human patterns are fine
+- Short words over long ones wherever natural
 - Output ONLY the text. Zero preamble. Zero label.
-- First word of response = first word of the rewrite
 ${pushHarderBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THIS PERSON'S QUALITATIVE VOICE BLUEPRINT
+THIS PERSON'S DEEP VOICE BLUEPRINT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${rawBlueprint || "No blueprint yet — use the fingerprint and the 6 laws above."}`;
+${rawBlueprint || "No blueprint yet — use fingerprint and rules above."}`;
 }
 
 // ============================================================
 // REWRITE USER PROMPT
-// What gets sent alongside the text to rewrite
 // ============================================================
 function buildRewriteUserPrompt(text) {
-  return `Read the text below fully. Understand every idea, fact, argument, and point in it.
+  return `Read every word of the text below. Understand every idea, argument, and point.
 
-Then rewrite it completely from scratch in this person's voice, following all 6 laws.
+Now rewrite it in this person's voice, actively fixing every GPTZero flag.
 
-Before you write each sentence, ask yourself:
-→ Is this word shorter than 6 characters? Good. If not — is there a shorter natural version?
-→ Am I starting enough sentences with "I"?
-→ What was the length of my last sentence? Make this one noticeably different.
-→ Is this transition a human one? ("So", "But then", "That's when") or an AI one? ("Furthermore" = never)
-→ Can I make this detail more specific and concrete?
-→ Does this paragraph have at least one very short sentence AND one long one?
+For each paragraph, before moving on, check:
+→ Is there at least one sentence under 7 words AND one over 25?
+→ Is there genuine personality in at least one sentence — a real opinion with a reason, a specific memory, or a personal angle?
+→ Is there at least one sentence that breaks the Subject+Verb+Object pattern?
+→ Is there a creative comparison, specific detail, or image that makes this paragraph feel real?
+→ Does any sentence contain a banned phrase? (Furthermore, This highlights, "more than just", clean wrap-up summary) → cut it
+→ Does the paragraph end with a neat conclusion sentence? → break it, trail off, ask a question, or just stop
 
-Self-check before finishing each paragraph:
-✓ Shortest sentence in this paragraph: ___words (must be under 8)
-✓ Longest sentence in this paragraph: ___words (must be over 22)
-✓ Any AI transition words? → remove every one
-✓ Any word over 6 chars that has a shorter natural version? → replace it
-✓ At least one "I" sentence opener? → add one if not
+Write with this person's actual personality from the blueprint — their real voice, their real way of thinking. Not performed humanness. Actual humanness.
 
-Output ONLY the rewritten text. No intro, no label, no explanation.
-First word of your response = first word of the text.
-
-Text to rewrite:\n\n${text}`;
-}
-
-// ============================================================
-// HUMANIZE USER PROMPT — second pass, push harder
-// ============================================================
-function buildHumanizeUserPrompt(text) {
-  return `This text is still being flagged by AI detectors. Full second-pass rewrite — not editing, fully rebuilding.
-
-Go sentence by sentence and apply this checklist hard:
-
-WORD LENGTH AUDIT — find every word over 6 characters:
-→ Is there a shorter version a real person would say? Use it.
-→ "significant" → "real" or "big". "demonstrate" → "show".
-→ "furthermore" → delete it and use "and" or "so" or nothing.
-
-SENTENCE LENGTH AUDIT — list the length of each sentence:
-→ Any two consecutive sentences within 5 words of each other?
-→ Break one — make it 3-5 words OR extend it to 30+.
-→ The sequence must look like: 5, 22, 8, 31, 4, 18, 27, 6
-
-"I" AUDIT:
-→ Count how many sentences start with "I".
-→ If under 25% — add more "I" starters naturally.
-→ "I think", "I remember", "I feel like", "I knew"
-
-TRANSITION AUDIT — scan every transition word:
-→ Furthermore/Moreover/Additionally/Consequently/Subsequently
-→ Any of these found? Replace immediately with a human one.
-→ "So", "But", "And", "That's when", "The thing is"
-
-SPECIFIC DETAIL AUDIT:
-→ Any sentence that feels generic or abstract?
-→ Make it more concrete. Add a specific detail.
-→ "This helped me" → "This is actually what made me realize"
-
-Keep every idea and fact. Keep full depth and quality.
-Output ONLY the rewritten text. First word = first word.
+Output ONLY the rewritten text. No intro, no label. First word of response = first word of text.
 
 Text:\n\n${text}`;
 }
+
+// ============================================================
+// HUMANIZE USER PROMPT — second pass
+// ============================================================
+function buildHumanizeUserPrompt(text) {
+  return `This text is still being flagged by GPTZero. Full second-pass rebuild — not editing, fully rewriting.
+
+The remaining AI signals are almost always these three things. Find and fix all of them:
+
+1. CLEAN WRAP-UP SENTENCES — any sentence that neatly summarizes a paragraph or states a generic conclusion. Find every one. Either break it into something messier and more personal, or cut the clean ending entirely and let the paragraph just stop or trail off.
+
+2. GENERIC OBSERVATIONS — any sentence that states a fact or opinion without real personality behind it. "This is important." "It helps a lot." Replace each one with something specific: why THIS person thinks so, what they remember about it, or a real comparison that comes from their actual experience.
+
+3. RHYTHM SETTLING — any two or three consecutive sentences of similar length. Find them. Break one by either cutting it to 3-4 words or extending it to 30+ words. The length contrast is what creates human burstiness.
+
+Also: scan for any banned AI words (Furthermore, Moreover, Subsequently, This demonstrates, "more than just", obtain, utilize, significant, numerous) and replace every single one with a shorter natural version.
+
+Keep every idea and argument. Keep full depth. Keep this person's voice.
+Output ONLY the rebuilt text. First word of response = first word of text.
+
+Text:\n\n${text}`;
+}
+
+
 
 // ============================================================
 // GET /health — quick uptime check
@@ -531,38 +482,38 @@ app.post("/analyze", async (req, res) => {
       .map((s, i) => `--- Sample ${i + 1}: ${s.label || "Untitled"} ---\n${s.text}`)
       .join("\n\n");
 
-    const systemPrompt = `You are a forensic writing analyst. Your job is to identify the deep personality, tone, rhythm, and structural habits of a writer from their real samples. Be specific. Quote actual phrases as evidence for every point. Output ONLY the sections requested — no preamble, no sign-off, nothing extra.`;
+    const systemPrompt = `You are a forensic writing analyst and AI-detection expert. Your job is to extract a writer's deep personality, creativity patterns, syntax habits, and emotional signature from their real writing samples — specifically the qualities that make writing feel genuinely human rather than AI-generated. Be extremely specific. Quote actual phrases as evidence. Output ONLY the sections requested.`;
 
-    const userPrompt = `Study these writing samples carefully and extract this writer's style fingerprint. Output ONLY the following sections — nothing before or after:
+    const userPrompt = `Analyze these writing samples and extract a complete human writing fingerprint. Output ONLY these sections, nothing else:
 
 ${samplesText}
 
 VOICE & PERSONALITY:
-Describe their exact vibe and energy as a writer in 2–3 sentences. Quote one phrase from the samples as evidence.
+What is this person's genuine voice — not their topic, but HOW they think and express themselves? What makes them sound like a real person and not an AI? Quote one phrase that captures their personality perfectly.
 
-TONE PATTERNS:
-How does their tone shift across the samples? Do they use sarcasm, irony, or humor to make a point? Quote a specific example.
+CREATIVITY & ORIGINALITY MARKERS:
+Does this writer use metaphors, comparisons, or images from their own life? Do they make unexpected connections? Do they have opinions that feel genuinely theirs, not generic? Quote specific examples. This is what GPTZero calls "creativity" — the opposite of generic AI writing.
 
-SENTENCE RHYTHM QUIRKS:
-Go beyond length. Do they use fragments for punch? Answer their own rhetorical questions? Repeat a word for emphasis? Use one-word sentences? Quote examples from the samples.
+SYNTAX VARIETY PATTERNS:
+How do they vary their sentence structure? Do they start sentences with conjunctions (But, And, So)? Do they use fragments? Do they answer their own questions? Do they use parenthetical asides? Do they contradict themselves slightly? Quote examples of their most varied and interesting sentence structures.
 
-PARAGRAPH & FLOW STYLE:
-Do they frontload the main point or build toward it? Do they write in short punchy blocks or long flowing ones? How do they move between ideas?
+EMOTIONAL AUTHENTICITY:
+How does this person express genuine emotion, opinion, or personal stake in what they're writing? Do they admit confusion, excitement, frustration? Do they share personal memories or specific experiences? Quote examples. This is what makes writing feel warm rather than "detached warmth."
 
-PUNCTUATION PERSONALITY:
-What does their punctuation say about them? What do they use heavily? What is clearly absent? Be specific.
+ARGUMENT & THINKING STYLE:
+Does this person frontload their point or build to it? Do they think through problems out loud? Do they use personal examples as evidence rather than abstract claims? Do they go on tangents and come back? How do they connect one idea to the next in a way that feels like a real person's train of thought?
 
-VOCABULARY FINGERPRINT:
-What words and phrases are distinctly theirs — not common filler, but real signature expressions? Quote them directly from the samples.
+NATURAL IMPERFECTIONS:
+What are the small human habits in their writing — the "or something" at the end of a thought, the "I mean" mid-sentence, the sentence that runs a little long, the casual aside? These are exactly what AI detectors look for as proof of humanity. Quote specific examples.
 
-THINGS THEY NEVER DO:
-Based on all the samples, what writing habits are clearly absent? What would sound completely wrong coming from this person?
+WHAT THIS PERSON NEVER DOES:
+What AI writing habits are completely absent from their samples? (e.g. never uses "Furthermore", never wraps up paragraphs with a clean summary sentence, never uses passive voice) Be specific — these are just as important as what they do.
 
-PERSONALITY TRAITS:
-List 5–8 single words that describe this writer's voice. Example: direct, sarcastic, warm, impatient, self-aware.
+THEIR EXACT TRANSITIONS:
+List the exact words and phrases this person uses to move between ideas. Not AI transitions — their actual ones. Quote them directly.
 
 CLONING INSTRUCTIONS:
-Write 2–3 paragraphs addressed directly to an AI that will imitate this person. Use second person: "When writing as this person, you should..." Cover their overall approach, their relationship with the reader, their energy level, and the single most important thing to get right about their voice.`;
+Write 3 paragraphs to an AI that will write as this person. Cover: (1) their overall personality and how it comes through in writing, (2) their specific syntax habits and creativity patterns, (3) the single most important thing to get right to avoid sounding like AI when imitating them. Be extremely specific and actionable.`;
 
     const rawBlueprint = await callGroq(systemPrompt, userPrompt, 1500);
 
