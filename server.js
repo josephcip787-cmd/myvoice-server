@@ -1,10 +1,23 @@
 // ============================================================
-// MyVoice — Render.com Backend Server v4.0
-// Express.js + Groq SDK
+// MyVoice — Render.com Backend Server v10.0
+// The clean rebuild. Two-call architecture.
 //
-// POST /analyze  — extracts style DNA from writing samples
-// POST /rewrite  — rewrites text in your exact voice
-// POST /humanize — same but pushes harder on human texture
+// HOW IT WORKS:
+// POST /analyze  — deep analysis of writing samples
+//   Step A: extractStyleDNA() — local code, instant, mathematical
+//   Step B: Groq qualitative analysis — personality, structure,
+//           what they never do, cloning instructions
+//   Both stored together as the blueprint.
+//
+// POST /rewrite  — two-call reconstruction
+//   Call 1: Extract content from ChatGPT response as bullet points
+//           (strips the AI skeleton completely)
+//   Call 2: Reconstruct from bullet points using full DNA + blueprint
+//           (Groq never sees ChatGPT's sentences when writing)
+//
+// POST /humanize — second pass on the rewrite
+//   Same two-call approach, pushed harder on personal specificity
+//
 // GET  /health   — uptime check
 // ============================================================
 
@@ -17,26 +30,25 @@ const PORT = process.env.PORT || 3000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const MODEL = "llama-3.3-70b-versatile";
 
-// ---- Middleware ----
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 // ============================================================
 // GROQ API CALL
-// temperature: 0.72 for analysis (consistent, factual)
-//              1.0  for rewrites (creative, varied, unpredictable)
-// Higher temperature = more varied word choices = higher perplexity
-// = looks more human to detectors. 0.72 was making every rewrite
-// sound the same — safe, uniform, detectable.
+// temperature param:
+//   0.4 = extraction (consistent, factual, just pull the content)
+//   0.7 = analysis (balanced, thorough)
+//   1.0 = rewrite (varied, creative, human-feeling)
+//   1.1 = humanize second pass (push harder)
 // ============================================================
-async function callGroq(systemPrompt, userPrompt, maxTokens = 2000, temperature = 0.72) {
+async function callGroq(systemPrompt, userPrompt, maxTokens = 2000, temperature = 0.7) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       model: MODEL,
       max_tokens: maxTokens,
-      temperature: temperature,
+      temperature,
       top_p: 0.95,
-      frequency_penalty: 0.3,
+      frequency_penalty: 0.4,
       presence_penalty: 0.3,
       messages: [
         { role: "system", content: systemPrompt },
@@ -63,7 +75,7 @@ async function callGroq(systemPrompt, userPrompt, maxTokens = 2000, temperature 
           const parsed = JSON.parse(data);
           if (parsed.error) return reject(new Error(parsed.error.message || "Groq error"));
           const text = parsed?.choices?.[0]?.message?.content || "";
-          resolve(text);
+          resolve(text.trim());
         } catch (e) {
           reject(new Error("Failed to parse Groq response"));
         }
@@ -77,134 +89,152 @@ async function callGroq(systemPrompt, userPrompt, maxTokens = 2000, temperature 
 }
 
 // ============================================================
-// DEEP STYLE DNA — extracts everything GPTZero actually measures
-// Goes beyond sentence length into syntax variety, creativity
-// markers, emotional warmth, argument structure, literary devices
+// STEP A — LOCAL STYLE DNA
+// Pure JavaScript. No API. Instant. Mathematical.
+// Captures every measurable dimension of how someone writes.
 // ============================================================
 function extractStyleDNA(samples) {
-  const allText = samples.map(s => s.text).join(" ");
-  const sentences = allText.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 5);
+  const allText = samples.map(s => s.text).join("\n\n");
+  const paragraphs = allText.split(/\n\n+/).filter(p => p.trim().length > 10);
+  const sentences = allText.match(/[^.!?]+[.!?]+/g) || [];
+  const cleanSentences = sentences.map(s => s.trim()).filter(s => s.split(/\s+/).length > 1);
   const words = allText.toLowerCase().match(/\b[a-z']+\b/g) || [];
-  const sentenceCount = Math.max(sentences.length, 1);
-  const wordCount = Math.max(words.length, 1);
+  const sc = Math.max(cleanSentences.length, 1);
+  const wc = Math.max(words.length, 1);
 
-  // ---- Sentence length distribution ----
-  const lengths = sentences.map(s => s.split(/\s+/).length);
+  // ---- Sentence lengths ----
+  const lengths = cleanSentences.map(s => s.split(/\s+/).length);
   const avgLen = Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
   const minLen = Math.min(...lengths);
   const maxLen = Math.max(...lengths);
   const shortCount = lengths.filter(l => l <= 8).length;
-  const longCount = lengths.filter(l => l >= 25).length;
   const medCount = lengths.filter(l => l > 8 && l < 25).length;
-  const variance = Math.round(lengths.reduce((acc, l) => acc + Math.pow(l - avgLen, 2), 0) / lengths.length);
-  const rhythmLabel =
-    shortCount > longCount * 2 ? "punchy — mostly short sentences under 10 words" :
-    longCount > shortCount * 2 ? "flowing — often long sentences over 25 words" :
-    variance > 40 ? "wildly varied — unpredictable mix of very short and very long" :
-    "balanced — mixes short and medium sentences";
+  const longCount = lengths.filter(l => l >= 25).length;
+  const fragmentRate = Math.round((lengths.filter(l => l <= 4).length / sc) * 100);
 
-  // ---- Syntax variety (what GPTZero calls "Monotonous Syntax") ----
-  const startsWithI = sentences.filter(s => /^I\s/i.test(s)).length;
-  const startsWithBut = sentences.filter(s => /^(But|And|So|Because|Yet|Or)\s/i.test(s)).length;
-  const startsWithTime = sentences.filter(s => /^(When|After|Before|While|Once|As|Then)\s/i.test(s)).length;
-  const startsWithIt = sentences.filter(s => /^(It|That|This|There)\s/i.test(s)).length;
-  const startsWithVerb = sentences.filter(s => /^(Getting|Having|Doing|Being|Taking|Making|Looking|Going)\s/i.test(s)).length;
-  const declarativeCount = sentences.filter(s => /\.$/.test(s.trim())).length;
-  const questionCount = sentences.filter(s => /\?$/.test(s.trim())).length;
-  const exclamCount = sentences.filter(s => /!$/.test(s.trim())).length;
-
-  // ---- Rhythm patterns (GPTZero: "Predictable Rhythm") ----
-  // Detect if writer uses same length repeatedly
-  let rhythmRepeat = 0;
+  // Variance between consecutive sentences (burstiness)
+  let consecDiff = 0;
   for (let i = 1; i < lengths.length; i++) {
-    if (Math.abs(lengths[i] - lengths[i-1]) <= 3) rhythmRepeat++;
+    consecDiff += Math.abs(lengths[i] - lengths[i - 1]);
   }
-  const rhythmRepeatRate = Math.round((rhythmRepeat / sentenceCount) * 100);
+  const avgConsecDiff = lengths.length > 1 ? Math.round(consecDiff / (lengths.length - 1)) : 0;
 
-  // ---- Creativity markers (GPTZero: "Lacks Creativity") ----
-  const metaphors = (allText.match(/\b(like|as if|as though|feels like|seems like|reminds me|kind of like|sort of like)\b/gi) || []).length;
-  const personalMemories = (allText.match(/\b(I remember|I recall|back when|one time|I used to|growing up|when I was|I once)\b/gi) || []).length;
-  const selfCorrections = (allText.match(/\b(I mean|well|actually|honestly|or rather|you know|I guess|kind of|sort of)\b/gi) || []).length;
-  const rhetoricalQs = questionCount;
-  const tangents = (allText.match(/\b(by the way|speaking of|that reminds me|which is funny|the weird thing|the thing is)\b/gi) || []).length;
-  const opinions = (allText.match(/\b(I think|I feel|I believe|I don't know|I wonder|I get|in my opinion|to me|for me)\b/gi) || []).length;
+  // Run-on detection (sentences with 4+ commas)
+  const runOnCount = cleanSentences.filter(s => (s.match(/,/g) || []).length >= 4).length;
+  const runOnRate = Math.round((runOnCount / sc) * 100);
 
-  // ---- Emotional warmth (GPTZero: "Detached Warmth") ----
-  const warmthWords = (allText.match(/\b(love|hate|excited|nervous|scared|happy|sad|frustrated|proud|worried|amazed|honestly|actually|really|feel|felt|emotion|heart|care|matter)\b/gi) || []).length;
-  const personalPronouns = (allText.match(/\b(I|me|my|mine|myself|we|us|our)\b/gi) || []).length;
-  const warmthScore = Math.round(((warmthWords + personalPronouns) / wordCount) * 100);
+  // ---- Sentence openers ----
+  const openerI = cleanSentences.filter(s => /^I\s/i.test(s)).length;
+  const openerConj = cleanSentences.filter(s => /^(But|And|So|Because|Yet|Or|Nor)\s/i.test(s)).length;
+  const openerClause = cleanSentences.filter(s => /^(When|After|Before|While|Once|If|Since|Although|Though|Because|As)\s/i.test(s)).length;
+  const openerFiller = cleanSentences.filter(s => /^(Well,|I mean,|Honestly,|Look,|See,|Now,|Okay,|Right,|Actually,)/i.test(s)).length;
+  const openerQuestion = cleanSentences.filter(s => /^(What|How|Why|When|Where|Who|Is|Are|Do|Does|Can|Have|Has|Did)\s/i.test(s) && s.trim().endsWith("?")).length;
+  const openerIt = cleanSentences.filter(s => /^(It|That|This|There)\s/i.test(s)).length;
 
-  // ---- Vocabulary profile ----
+  // Most common first word
+  const firstWords = {};
+  cleanSentences.forEach(s => {
+    const fw = s.trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, "");
+    if (fw) firstWords[fw] = (firstWords[fw] || 0) + 1;
+  });
+  const topOpener = Object.entries(firstWords).sort((a, b) => b[1] - a[1])[0]?.[0] || "i";
+
+  // ---- Transitions actually used ----
+  const transitionList = [
+    "so", "but", "and", "because", "then", "though", "although",
+    "however", "which means", "that's why", "this is why", "the thing is",
+    "i mean", "you know", "honestly", "actually", "basically", "like",
+    "anyway", "still", "also", "plus", "even", "yet", "well",
+    "i guess", "i think", "i feel", "i remember", "i know",
+    "and so", "but then", "so then", "and then", "but also"
+  ];
+  const usedTransitions = transitionList.filter(t => {
+    const re = new RegExp(`\\b${t.replace(/\s/g, "\\s")}\\b`, "gi");
+    return (allText.match(re) || []).length >= 2;
+  });
+
+  // ---- Vocabulary ----
+  const avgWordLen = Math.round(words.reduce((a, w) => a + w.length, 0) / wc);
+  const longWordRate = Math.round((words.filter(w => w.length > 8).length / wc) * 100);
   const uniqueWords = new Set(words);
-  const vocabRichness = Math.round((uniqueWords.size / wordCount) * 100);
-  const avgWordLen = Math.round(words.reduce((a, w) => a + w.length, 0) / wordCount);
-  const longWords = words.filter(w => w.length > 8).length;
-  const longWordRate = Math.round((longWords / wordCount) * 100);
+  const vocabRichness = Math.round((uniqueWords.size / wc) * 100);
 
-  // ---- Contractions ----
-  const contractionMatches = (allText.match(/\b(don't|doesn't|can't|won't|it's|i'm|i've|i'd|i'll|we're|we've|they're|you're|you've|isn't|aren't|wasn't|weren't|hasn't|haven't|hadn't|wouldn't|shouldn't|couldn't|that's|there's|here's|let's|who's|what's|didn't|couldn't|she's|he's)\b/gi) || []).length;
-  const contractionRate = Math.round((contractionMatches / wordCount) * 100);
-  const contractionLabel =
-    contractionRate > 8 ? "heavy — writes exactly how they talk" :
-    contractionRate > 3 ? "moderate — relaxed and semi-casual" :
-    "rare — tends toward more formal phrasing";
+  // Casual words
+  const casualList = ["kinda","sorta","gonna","wanna","gotta","literally","basically","honestly","like","just","really","super","totally","pretty","stuff","yeah","yep","nope","okay","cool","crazy","wild","nuts","awesome","dude","man","wait","hold on","i mean","you know","or something","kind of","sort of","a lot","tons","loads"];
+  const casualHits = casualList.filter(w => new RegExp(`\\b${w}\\b`, "gi").test(allText));
 
-  // ---- Punctuation fingerprint ----
+  // Formal words
+  const formalList = ["therefore","moreover","furthermore","subsequently","nevertheless","accordingly","consequently","albeit","utilize","facilitate","implement","leverage","regarding","pertaining","demonstrate","significant","substantial","numerous"];
+  const formalHits = formalList.filter(w => new RegExp(`\\b${w}\\b`, "gi").test(allText));
+
+  // Contractions
+  const contractionTypes = ["don't","doesn't","can't","won't","it's","i'm","i've","i'd","i'll","we're","they're","you're","isn't","aren't","wasn't","weren't","hasn't","haven't","wouldn't","couldn't","shouldn't","that's","there's","let's","didn't","she's","he's","what's","who's","here's","i'd"];
+  const usedContractions = contractionTypes.filter(c => new RegExp(`\\b${c.replace("'", "\\'")}\\b`, "gi").test(allText));
+  const contractionRate = Math.round((usedContractions.length > 0 ? (allText.match(/\b\w+'\w+\b/g) || []).length : 0) / wc * 100);
+
+  // ---- Punctuation ----
   const exclamations = (allText.match(/!/g) || []).length;
   const questions = (allText.match(/\?/g) || []).length;
   const ellipses = (allText.match(/\.\.\./g) || []).length;
-  const dashes = (allText.match(/[—\-]{1,2}/g) || []).length;
+  const dashes = (allText.match(/—|-{2}/g) || []).length;
   const commas = (allText.match(/,/g) || []).length;
   const semicolons = (allText.match(/;/g) || []).length;
-  const punctuationNotes = [
-    exclamations / sentenceCount > 0.3 ? "uses exclamation marks freely" : null,
-    ellipses / sentenceCount > 0.15 ? "uses ellipses — thoughts trail off naturally" : null,
-    dashes / sentenceCount > 0.3 ? "uses dashes for asides and interruptions" : null,
-    questions / sentenceCount > 0.15 ? "asks questions — rhetorical and real" : null,
-    commas / sentenceCount > 2.5 ? "comma-heavy — stacks clauses and lists" : null,
-    semicolons > 3 ? "uses semicolons to connect related thoughts" : null,
-  ].filter(Boolean).join("; ") || "clean punctuation — no dramatic habits";
+  const parens = (allText.match(/\(/g) || []).length;
+  const commaPerSentence = parseFloat((commas / sc).toFixed(2));
 
-  // ---- Formality ----
-  const formalWords = (allText.match(/\b(therefore|moreover|furthermore|subsequently|nevertheless|accordingly|consequently|albeit|notwithstanding|utilize|facilitate|implement|leverage|regarding|pertaining|demonstrate|indicate|significant|substantial|numerous|considerable)\b/gi) || []).length;
-  const casualWords = (allText.match(/\b(kinda|sorta|gonna|wanna|gotta|tbh|ngl|lowkey|literally|basically|honestly|like|just|really|super|totally|pretty|stuff|yeah|yep|nope|okay|cool|crazy|huge|wild|nuts)\b/gi) || []).length;
-  let formalityScore = 50 + (formalWords * 5) - (casualWords * 3) - (contractionRate * 2);
-  formalityScore = Math.max(0, Math.min(100, formalityScore));
+  // Comma splices (sentence ends without period — just comma joining two independent clauses)
+  const commaSplices = (allText.match(/[a-z],\s+[a-z]/g) || []).length;
 
-  // ---- Argument/structure style ----
-  const usesExamples = (allText.match(/\b(for example|for instance|like when|such as|one time|I remember when)\b/gi) || []).length;
-  const frontLoads = sentences.filter((s, i) => {
-    if (i === 0) return false;
-    const prev = sentences[i-1];
-    return prev && prev.split(/\s+/).length < 10 && s.split(/\s+/).length > 20;
-  }).length;
-  const buildsToPoint = sentences.filter((s, i) => {
-    if (i < 2) return false;
-    return /\b(so|which means|that's why|this is why|because of this|and that's)\b/i.test(s);
-  }).length;
-
-  // ---- Literary devices ----
-  const similes = (allText.match(/\b(like a|like an|like the|as a|as if|as though)\b/gi) || []).length;
-  const repetition = (allText.match(/\b(\w+)\s+\1\b/gi) || []).length;
+  // ---- Tone scores ----
+  const hedgeWords = (allText.match(/\b(maybe|perhaps|probably|possibly|might|could|i think|i feel|i guess|i suppose|sort of|kind of|somewhat|a bit|a little)\b/gi) || []).length;
+  const hedgeRate = Math.round((hedgeWords / sc) * 100);
+  const opinionWords = (allText.match(/\b(i think|i feel|i believe|i know|i guess|i wonder|in my opinion|for me|to me|personally)\b/gi) || []).length;
+  const memoryWords = (allText.match(/\b(i remember|i recall|back when|one time|when i was|i used to|i once|growing up)\b/gi) || []).length;
+  const selfCorrections = (allText.match(/\b(i mean|well,|actually|wait,|no wait|or rather|you know|i guess)\b/gi) || []).length;
   const directAddress = (allText.match(/\b(you|your|yourself)\b/gi) || []).length;
+  const personalPronouns = (allText.match(/\b(i|me|my|mine|myself|we|us|our)\b/gi) || []).length;
+  const emotionWords = (allText.match(/\b(love|hate|scared|nervous|excited|happy|sad|frustrated|proud|worried|amazed|angry|hurt|embarrassed|shocked|surprised|feel|felt|feeling)\b/gi) || []).length;
 
-  // ---- Signature style words (cross-sample only) ----
-  const stopwords = new Set(["the","a","an","and","or","but","in","on","at","to","for","of","with","is","are","was","were","be","been","being","have","has","had","do","does","did","will","would","could","should","may","might","shall","can","i","you","he","she","it","we","they","me","him","her","us","them","my","your","his","its","our","their","this","that","these","those","what","which","who","when","where","why","how","all","each","every","not","no","so","if","as","by","from","up","about","than","then","just","also","there","here","very","more","some","any","only","out","into","get","got","go","going","like","one","know","think","feel","time","way","make","take","come","see","look","want","give","use","find","tell","work","call","try","ask","need","seem","leave","show","keep","let","begin","long","never","always","often","back","still","around","even","well","new","good","old","right","big","high","different","small","large","next","early","young","important","few","public","bad","same","able"]);
+  let formalityScore = 50 + (formalHits.length * 4) - (casualHits.length * 2) - (contractionRate * 1.5);
+  formalityScore = Math.max(0, Math.min(100, Math.round(formalityScore)));
+  const warmthScore = Math.min(100, Math.round(((emotionWords + personalPronouns) / wc) * 200));
 
+  // ---- Paragraph style ----
+  const paraLengths = paragraphs.map(p => (p.match(/[^.!?]+[.!?]+/g) || []).length);
+  const avgParaLen = paraLengths.length ? Math.round(paraLengths.reduce((a, b) => a + b, 0) / paraLengths.length) : 3;
+
+  // ---- Structure patterns ----
+  const firstSentence = cleanSentences[0] || "";
+  const lastSentence = cleanSentences[cleanSentences.length - 1] || "";
+  const openingStyle =
+    /^I\s/i.test(firstSentence) ? "starts with personal I statement" :
+    /^(But|And|So)\s/i.test(firstSentence) ? "jumps in with a conjunction" :
+    /\?$/.test(firstSentence.trim()) ? "opens with a question" :
+    /^(Well|I mean|Honestly)/i.test(firstSentence) ? "starts with a filler/aside" :
+    "starts with a direct statement about the topic";
+
+  const closingStyle =
+    /\?$/.test(lastSentence.trim()) ? "ends with a question" :
+    lastSentence.split(/\s+/).length < 7 ? "ends with a short punchy line" :
+    /\.\.\.$/.test(lastSentence.trim()) ? "trails off with ellipsis" :
+    "ends with a complete thought";
+
+  // ---- Signature style words (appear in 2+ samples) ----
+  const stopwords = new Set(["the","a","an","and","or","but","in","on","at","to","for","of","with","is","are","was","were","be","been","being","have","has","had","do","does","did","will","would","could","should","may","might","can","i","you","he","she","it","we","they","me","him","her","us","them","my","your","his","its","our","their","this","that","these","those","what","which","who","when","where","why","how","all","each","not","no","so","if","as","by","from","up","about","than","then","just","also","there","here","very","more","some","any","only","out","into","get","got","go","going","one","like","know","think","feel","time","way","make","take","come","see","look","want","back","still","even","well","new","good","old","right","big","really","very","much","many","same","own","too","now","after","before","where","while","though","because","since","although","never","always","every","both","few","most","other","such","than","then","its","into","over","also","after","before","between","through","during","without","within","along","across","behind","beyond","plus","except","up","down","off","yet","once","twice"]);
   const sampleWordSets = samples.map(s => new Set((s.text.toLowerCase().match(/\b[a-z']+\b/g) || [])));
   const wordFreq = {};
   words.forEach(w => { if (!stopwords.has(w) && w.length > 3) wordFreq[w] = (wordFreq[w] || 0) + 1; });
-  const minSamples = samples.length > 1 ? 2 : 1;
-  const topWords = Object.entries(wordFreq)
-    .filter(([w]) => sampleWordSets.filter(s => s.has(w)).length >= minSamples)
+  const minSampleAppearance = samples.length > 1 ? 2 : 1;
+  const signatureWords = Object.entries(wordFreq)
+    .filter(([w]) => sampleWordSets.filter(s => s.has(w)).length >= minSampleAppearance)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 15)
     .map(([w]) => w);
 
-  // ---- Recurring phrase patterns ----
+  // Recurring phrases
   const phraseFreq = {};
   for (let i = 0; i < words.length - 2; i++) {
-    const [w1, w2, w3] = [words[i], words[i+1], words[i+2]];
+    const [w1, w2, w3] = [words[i], words[i + 1], words[i + 2]];
     if (!stopwords.has(w1) || !stopwords.has(w2)) {
       const p2 = `${w1} ${w2}`;
       phraseFreq[p2] = (phraseFreq[p2] || 0) + 1;
@@ -218,347 +248,289 @@ function extractStyleDNA(samples) {
     .slice(0, 10)
     .map(([p]) => p);
 
-  // ---- Structure analysis ----
-  // How does this person organize their thinking?
-  const firstSentence = sentences[0] || "";
-  const lastSentence = sentences[sentences.length - 1] || "";
-
-  // Opening style
-  const openingStyle =
-    /^(I |My |When I|For me)/i.test(firstSentence) ? "starts with personal statement or memory" :
-    /\?$/.test(firstSentence.trim()) ? "opens with a question" :
-    /^(The |This |It )/i.test(firstSentence) ? "opens with a direct statement about the topic" :
-    /^(But|And|So|Because)/i.test(firstSentence) ? "jumps in mid-thought with a conjunction" :
-    "varied opening style";
-
-  // Closing style
-  const closingStyle =
-    /\?$/.test(lastSentence.trim()) ? "ends with a question — open, not wrapped up" :
-    lastSentence.split(/\s+/).length < 8 ? "ends abruptly with a short punchy line" :
-    /\.\.\.$/.test(lastSentence.trim()) ? "trails off with an ellipsis" :
-    buildsToPoint > 1 ? "wraps up with a conclusion sentence" :
-    "ends mid-thought or with a casual observation";
-
-  // Structure type
-  const linearScore = buildsToPoint;
-  const jumpScore = tangents + selfCorrections;
-  const storyScore = personalMemories;
-  const structureType =
-    storyScore > linearScore && storyScore > jumpScore ? "narrative — tells stories and uses personal experiences" :
-    jumpScore > linearScore ? "associative — jumps between ideas, self-corrects, goes on tangents" :
-    buildsToPoint > 2 ? "linear — builds logically from point to point" :
-    "mixed — some structure but not rigid";
-
-  // Opinion/fact mixing
-  const opinionFactMix =
-    opinions > sentences.length * 0.3 ? "heavily mixed — opinions woven throughout, hard to separate from facts" :
-    opinions > sentences.length * 0.1 ? "moderate mixing — personal takes appear regularly alongside facts" :
-    "mostly separate — states facts first, opinions occasionally";
-
-  // Paragraph style
-  const avgParaLen = sentences.length > 0 ? Math.round(sentences.length / Math.max(allText.split(/\n\n+/).length, 1)) : 5;
-  const paragraphStyle =
-    avgParaLen <= 2 ? "very short paragraphs — 1-2 sentences each, punchy blocks" :
-    avgParaLen <= 4 ? "short-medium paragraphs — 3-4 sentences, moves fast" :
-    "longer paragraphs — develops ideas over multiple sentences";
-
   return {
-    // Sentence rhythm
-    avgLen, minLen, maxLen, variance, rhythmLabel,
-    shortCount, medCount, longCount, sentenceCount,
-    rhythmRepeatRate,
-    // Syntax variety
-    startsWithIRate: Math.round((startsWithI / sentenceCount) * 100),
-    startsWithConjRate: Math.round((startsWithBut / sentenceCount) * 100),
-    startsWithTimeRate: Math.round((startsWithTime / sentenceCount) * 100),
-    questionRate: Math.round((questionCount / sentenceCount) * 100),
-    exclamRate: Math.round((exclamCount / sentenceCount) * 100),
-    // Creativity markers
-    metaphorRate: Math.round((metaphors / sentenceCount) * 100),
-    personalMemoryCount: personalMemories,
-    selfCorrectionCount: selfCorrections,
-    tangentCount: tangents,
-    opinionCount: opinions,
-    hasLiteraryDevices: similes > 2 || repetition > 1,
-    directAddressRate: Math.round((directAddress / wordCount) * 100),
-    // Warmth & personality
-    warmthScore, contractionRate, contractionLabel,
+    // Rhythm
+    avgLen, minLen, maxLen, shortCount, medCount, longCount,
+    fragmentRate, runOnRate, avgConsecDiff,
+    sentenceCount: sc, wordCount: wc,
+
+    // Openers
+    openerIRate: Math.round((openerI / sc) * 100),
+    openerConjRate: Math.round((openerConj / sc) * 100),
+    openerClauseRate: Math.round((openerClause / sc) * 100),
+    openerFillerRate: Math.round((openerFiller / sc) * 100),
+    openerQuestionRate: Math.round((openerQuestion / sc) * 100),
+    openerItRate: Math.round((openerIt / sc) * 100),
+    topOpener,
+
+    // Transitions
+    usedTransitions,
+
     // Vocabulary
-    vocabRichness, avgWordLen, longWordRate,
+    avgWordLen, longWordRate, vocabRichness,
+    casualWords: casualHits,
+    formalWords: formalHits,
+    usedContractions: usedContractions.slice(0, 10),
+    contractionRate,
+
     // Punctuation
-    punctuationNotes,
-    exclamationsPerSentence: Math.round((exclamations / sentenceCount) * 10) / 10,
-    ellipsesPerSentence: Math.round((ellipses / sentenceCount) * 10) / 10,
-    dashesPerSentence: Math.round((dashes / sentenceCount) * 10) / 10,
-    // Formality & structure
-    formalityScore,
-    usesExamples: usesExamples > 1,
-    buildsToPoint: buildsToPoint > 1,
-    // Structure patterns (NEW)
-    structureType, openingStyle, closingStyle,
-    opinionFactMix, paragraphStyle,
-    // Signature patterns
-    topWords, topPhrases,
-    // Fragment rate
-    fragmentRate: Math.round((sentences.filter(s => s.split(/\s+/).length <= 4).length / sentenceCount) * 100),
+    exclamPerSentence: parseFloat((exclamations / sc).toFixed(2)),
+    questionPerSentence: parseFloat((questions / sc).toFixed(2)),
+    ellipsisPerSentence: parseFloat((ellipses / sc).toFixed(2)),
+    dashPerSentence: parseFloat((dashes / sc).toFixed(2)),
+    commaPerSentence,
+    semicolonCount: semicolons,
+    parenCount: parens,
+    commaSpliceRate: Math.round((commaSplices / sc) * 100),
+
+    // Personality
+    formalityScore, warmthScore,
+    hedgeRate, opinionCount: opinionWords,
+    memoryCount: memoryWords,
+    selfCorrectionCount: selfCorrections,
+    directAddressRate: Math.round((directAddress / wc) * 100),
+    emotionWordCount: emotionWords,
+
+    // Structure
+    avgParaLen, openingStyle, closingStyle,
+
+    // Signatures
+    signatureWords, topPhrases,
   };
 }
 
 // ============================================================
-// VOICE + STRUCTURE CLONE SYSTEM v9.0
-//
-// TWO SEPARATE JOBS — voice and detector never fight each other:
-//
-// JOB 1 — GROQ: Clone this person's voice AND structure.
-//   - Voice: rhythm, vocabulary, tone, personality
-//   - Structure: how they organize thinking (do they front-load?
-//     tell stories? mix opinion/fact? jump around? trail off?)
-//   - Zero detector rules in this prompt — just pure voice clone
-//
-// JOB 2 — postProcess(): Deterministic code fixes detector signals
-//   - Strip banned AI phrases with regex (guaranteed)
-//   - Swap long AI words for short human ones (guaranteed)
-//   - No AI involved — pure math, works every time
-//
-// WHY STRUCTURE MATTERS:
-//   GPTZero flags: Task-Oriented, Formulaic Flow, Rigid Guidance,
-//   Lacks Complexity. These come from ChatGPT's skeleton —
-//   linear, step-by-step, point-by-point. No word swap fixes that.
-//   We need to rebuild the STRUCTURE to match how this person
-//   actually organizes their thoughts, not how ChatGPT does.
+// STEP B — GROQ QUALITATIVE ANALYSIS PROMPT
+// Captures what code can't measure:
+// personality, humor, argument style, what they never do,
+// cloning instructions written directly to the rewrite model
 // ============================================================
+function buildAnalysisPrompt(samplesText, dna) {
+  return {
+    system: `You are a forensic writing analyst. Your job is to study real human writing samples and produce an extremely precise profile that another AI can use to perfectly clone this person's voice and writing structure. Every observation must be specific and grounded in actual evidence from the samples. Quote real phrases. Be forensic, not generic.`,
 
-function buildSystemPrompt(dna, rawBlueprint) {
+    user: `Study these writing samples and produce a complete writer profile. Output ONLY the sections below — nothing else, no preamble.
 
-  const dnaBlock = dna ? `
+${samplesText}
+
+---
+
+MEASURED FINGERPRINT (for context — already calculated):
+- Avg sentence length: ${dna.avgLen} words (range: ${dna.minLen}–${dna.maxLen})
+- Short sentences (≤8w): ${dna.shortCount} | Medium: ${dna.medCount} | Long (25+w): ${dna.longCount}
+- Starts with "I": ${dna.openerIRate}% | Conjunctions: ${dna.openerConjRate}% | Questions: ${dna.openerQuestionRate}%
+- Run-on rate: ${dna.runOnRate}% | Fragment rate: ${dna.fragmentRate}%
+- Formality: ${dna.formalityScore}/100 | Warmth: ${dna.warmthScore}/100
+- Contractions used: ${dna.usedContractions.join(", ") || "few"}
+- Casual words: ${dna.casualWords.slice(0, 8).join(", ") || "few"}
+- Commas per sentence: ${dna.commaPerSentence}
+- Personal memories: ${dna.memoryCount} | Self-corrections: ${dna.selfCorrectionCount}
+- Opinion markers: ${dna.opinionCount} | Hedge rate: ${dna.hedgeRate}%
+
+---
+
+VOICE & PERSONALITY:
+In 3-4 sentences describe this writer's exact personality as it comes through in writing. What makes them feel like a real specific person and not a generic writer? Quote one phrase that captures them perfectly.
+
+THINKING STRUCTURE:
+How does this person organize their ideas? Be precise:
+- Linear (A→B→C) or associative (jumping between connected ideas)?
+- Do they state their point first then explain, or build toward it?
+- Do they mix opinion and fact together or keep them separate?
+- Do they follow the original topic or go on tangents?
+- How long are their paragraphs typically?
+Quote one example of their structural pattern from the samples.
+
+HOW THEY OPEN:
+How does this person start a piece or a new idea? Do they jump in mid-thought? Start with a personal memory? Ask a question? Make a bold statement? Quote an actual opening from their samples.
+
+HOW THEY CLOSE:
+How does this person end a thought or a paragraph? Do they trail off? End abruptly? Wrap up cleanly? Ask a question? Quote an actual closing from their samples.
+
+PERSONAL STORY PATTERN:
+Do they use personal memories and stories? If so — how? Do they name specific details (ages, people, places)? Do they drop into the story immediately or introduce it? How long are the stories? Quote an example.
+
+HUMOR & PERSONALITY QUIRKS:
+What is their humor style if any — dry, self-deprecating, absurd, none? What personality quirks show up consistently? Sarcasm? Hyperbole? Self-correction mid-thought? Quote examples.
+
+THEIR EXACT TRANSITIONS:
+List the exact words and phrases this person uses to move between ideas. Quote them directly from the samples. Do NOT list generic transitions — only ones that actually appear.
+
+WHAT THEY NEVER DO:
+List 5-8 specific writing habits that are completely absent. Be specific — not "they don't use formal language" but "they never use 'Furthermore' or 'Moreover', never end paragraphs with a summary sentence, never use passive voice."
+
+OPINION STYLE:
+When they state an opinion, do they give reasons? Do they hedge ("I think maybe") or state confidently? Do they invite the reader to agree or just state their view? Quote an example.
+
+CLONING INSTRUCTIONS:
+Write 4 paragraphs directly to the AI that will rewrite content as this person. Use "you should..." and "when writing as this person...". Cover:
+1. Their voice, personality, and energy — what makes every sentence sound like them
+2. Their structure — how they organize ideas, how they open, how they close
+3. Their personal story pattern — when and how to use specific memories
+4. The single most important thing to get right, and the single biggest mistake to avoid`
+  };
+}
+
+// ============================================================
+// CALL 1 — CONTENT EXTRACTION
+// Strips ChatGPT's skeleton completely.
+// Output: clean bullet points of just the meaning.
+// Groq never looks at these sentences again when rewriting.
+// ============================================================
+function buildExtractionPrompt(text) {
+  return {
+    system: `You are a content extractor. Your only job is to pull the core meaning out of a piece of writing — the facts, arguments, ideas, and logical relationships — and list them as clean bullet points. Strip ALL phrasing, structure, and wording. Just the meaning. Be complete — don't miss any ideas. Output ONLY the bullet points, nothing else.`,
+
+    user: `Extract every idea, fact, argument, and logical relationship from this text as bullet points. Strip all phrasing — just the raw meaning. Be complete.
+
+Text:
+${text}
+
+Output format:
+• [idea/fact/argument]
+• [idea/fact/argument]
+...`
+  };
+}
+
+// ============================================================
+// CALL 2 — RECONSTRUCTION PROMPT
+// Groq gets: bullet points (meaning) + full DNA + blueprint
+// Groq does NOT get: ChatGPT's original sentences
+// Result: built entirely from this person's writing patterns
+// ============================================================
+function buildReconstructionPrompt(bulletPoints, dna, rawBlueprint, pushHarder = false) {
+
+  const fingerprint = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THIS PERSON'S MEASURED WRITING FINGERPRINT
+MATHEMATICAL FINGERPRINT — match these numbers precisely
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SENTENCE RHYTHM:
-  Style: ${dna.rhythmLabel}
-  Average: ${dna.avgLen} words | Range: ${dna.minLen}–${dna.maxLen}
-  Short (≤8w): ${dna.shortCount} | Medium: ${dna.medCount} | Long (25+w): ${dna.longCount}
+  Average length: ${dna.avgLen} words | Range: ${dna.minLen}–${dna.maxLen}
+  Short (≤8w): ${Math.round((dna.shortCount/dna.sentenceCount)*100)}% | Medium: ${Math.round((dna.medCount/dna.sentenceCount)*100)}% | Long (25+w): ${Math.round((dna.longCount/dna.sentenceCount)*100)}%
+  Avg change between consecutive sentences: ${dna.avgConsecDiff} words
+  Fragment rate: ${dna.fragmentRate}% | Run-on rate: ${dna.runOnRate}%
 
-SYNTAX VARIETY:
-  Starts with "I": ${dna.startsWithIRate}%
-  Starts with conjunction (But/And/So): ${dna.startsWithConjRate}%
-  Starts with time/clause (When/After/Because): ${dna.startsWithTimeRate}%
-  Questions: ${dna.questionRate}% | Exclamations: ${dna.exclamRate}%
-  Fragment rate: ${dna.fragmentRate}%
+SENTENCE OPENERS:
+  Starts with "I": ${dna.openerIRate}%
+  Starts with conjunction (But/And/So): ${dna.openerConjRate}%
+  Starts with clause (When/After/If): ${dna.openerClauseRate}%
+  Starts with filler (Well/I mean/Honestly): ${dna.openerFillerRate}%
+  Most common first word: "${dna.topOpener}"
+
+VOCABULARY:
+  Avg word length: ${dna.avgWordLen} chars | Long words (8+ chars): ${dna.longWordRate}%
+  Casual words they use: ${dna.casualWords.slice(0,8).join(", ") || "standard"}
+  Contractions they use: ${dna.usedContractions.join(", ") || "few"}
+  Formality: ${dna.formalityScore}/100 | Warmth: ${dna.warmthScore}/100
+
+PUNCTUATION:
+  Exclamations: ${dna.exclamPerSentence}/sentence
+  Questions: ${dna.questionPerSentence}/sentence
+  Ellipsis: ${dna.ellipsisPerSentence}/sentence
+  Dashes: ${dna.dashPerSentence}/sentence
+  Commas: ${dna.commaPerSentence}/sentence
+  Semicolons total: ${dna.semicolonCount}
+  Parenthetical asides: ${dna.parenCount}
 
 PERSONALITY MARKERS:
-  Personal memories/anecdotes: ${dna.personalMemoryCount}
-  Opinion markers (I think/feel/believe): ${dna.opinionCount}
-  Self-corrections (I mean/well/honestly): ${dna.selfCorrectionCount}
-  Metaphors/comparisons: ${dna.metaphorRate} per 100 sentences
-  Direct reader address (you/your): ${dna.directAddressRate}%
+  Personal memories: ${dna.memoryCount} in samples
+  Opinion markers (I think/feel): ${dna.opinionCount}
+  Self-corrections (I mean/well/actually): ${dna.selfCorrectionCount}
+  Hedge rate: ${dna.hedgeRate}%
+  Direct reader address: ${dna.directAddressRate}%
 
-STRUCTURE HABITS:
-  Argument style: ${dna.buildsToPoint ? "builds toward the point" : "front-loads the conclusion"}
-  Uses personal examples as evidence: ${dna.usesExamples ? "yes" : "rarely"}
-  Structure type: ${dna.structureType}
+STRUCTURE:
+  Avg paragraph length: ${dna.avgParaLen} sentences
   Opening style: ${dna.openingStyle}
   Closing style: ${dna.closingStyle}
-  Opinion/fact mixing: ${dna.opinionFactMix}
-  Paragraph style: ${dna.paragraphStyle}
 
-VOICE:
-  Formality: ${dna.formalityScore}/100 | Warmth: ${dna.warmthScore}/100
-  Contractions: ${dna.contractionLabel} (${dna.contractionRate}%)
-  Avg word length: ${dna.avgWordLen} chars | Long words (8+): ${dna.longWordRate}%
-  Punctuation: ${dna.punctuationNotes}
-  Signature style words: ${dna.topWords.length ? dna.topWords.join(", ") : "none"}
-` : "";
+TRANSITIONS THEY ACTUALLY USE:
+  ${dna.usedTransitions.join(", ") || "standard"}
 
-  return `You are a writing style and structure cloner. Your job is to rewrite a given text so it sounds AND thinks exactly like this specific person — matching not just their words and rhythm, but HOW they organize their ideas.
+SIGNATURE WORDS (appear across multiple samples):
+  ${dna.signatureWords.join(", ") || "none detected"}`;
 
-Output ONLY the rewritten text. No intro, no label. First word of response = first word of the rewritten text.
+  const pushBlock = pushHarder ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECOND PASS — push harder on these specifically
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The first version was close but still slightly AI. Fix:
+- Any sentence using "not just X, but Y" → rewrite it
+- Any paragraph ending with a clean summary → break it
+- Any point made without a personal angle → add one
+- Any two consecutive sentences of similar length → disrupt
+- Any formal word that has a shorter natural version → swap it` : "";
 
-${dnaBlock}
+  return {
+    system: `You are a writing style cloner. You reconstruct content in a specific human's exact writing voice. You have their complete mathematical fingerprint and qualitative profile. Your job is to write the given content exactly as THEY would have written it — matching every measurable and qualitative dimension of their writing. The output should be statistically indistinguishable from their real writing.
+
+Output ONLY the written text. No intro, no label, no explanation. First word of your response = first word of the text.`,
+
+    user: `Write the following content in this person's exact voice. You are not rewriting someone else's text — you are writing these ideas FROM SCRATCH as if this person just sat down and wrote about this topic themselves.
+
+${fingerprint}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WHAT TO CLONE — VOICE AND STRUCTURE TOGETHER
+QUALITATIVE VOICE & STRUCTURE BLUEPRINT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-CLONE THEIR STRUCTURE (this is what most people miss):
-The text you're rewriting is probably structured like a guide
-or explanation — linear, task-oriented, point by point. That
-structure itself triggers AI detectors. You need to rebuild
-it the way THIS person actually organizes their thinking.
-
-Study the blueprint below. Answer these before writing:
-→ Does this person front-load their point or build to it?
-→ Do they mix their own opinion in with facts, or keep them separate?
-→ Do they use personal stories/memories as evidence?
-→ Do they address the reader directly?
-→ Do they follow a linear path or jump between ideas?
-→ How do they open — with a statement, a question, mid-thought?
-→ How do they end — clean conclusion, trailing off, or abruptly?
-→ Do they stay on topic or go on tangents and come back?
-
-Then restructure the content to match their actual thinking pattern.
-A person who jumps around should jump around here too.
-A person who tells stories should tell a story here too.
-A person who asks questions and answers them should do that here.
-
-CLONE THEIR VOICE (rhythm, words, personality):
-→ Match their sentence length variation exactly
-→ Use their vocabulary level — if they use simple words, use simple words
-→ Start sentences the way they start sentences
-→ Use their punctuation habits
-→ Let their personality come through — opinions, uncertainty, enthusiasm
+${rawBlueprint || "Use the fingerprint above as your guide."}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CRITICAL — WHAT GPTZERO ACTUALLY DETECTS
+CRITICAL RULES — non-negotiable
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HUMAN signal #1 — personal stories with specific details
-  A real memory: "when I was a kid I said something mean to a friend"
-  GPTZero cannot flag specificity. It's maximum perplexity.
+1. PERSONAL STORIES ARE THE #1 HUMAN SIGNAL
+   Weave in at least one specific personal detail per paragraph.
+   A real memory, a specific moment, a named detail.
+   "I remember when..." or just drop into the story directly.
+   This is what GPTZero cannot flag — real specificity.
 
-HUMAN signal #2 — narrative structure
-  Intro that leads into a personal experience, not a list of points.
+2. CONTRAST PHRASING IS THE #1 AI SIGNAL — NEVER USE IT
+   Never write: "not just X, but Y"
+   Never write: "not just about X, but about Y"
+   Never write: "it's not just X, it's Y"
+   Never write: "more than just X"
+   Never write: "not about X, but about Y"
+   These get flagged every single time even in casual writing.
+   Instead say the positive directly: "it's about X and Y"
 
-AI signal #1 — contrast phrasing (kills even casual writing)
-  "not just X, but Y" / "not just about X, but about Y"
-  "it's not just X, it's Y" / "more than just X"
-  GPTZero catches this EVERY TIME even surrounded by "I mean" and "you know"
-  NEVER use this construction. Say the positive directly instead.
+3. DESTROY THE AI STRUCTURE
+   Do NOT write: topic sentence → explanation → conclusion
+   Do NOT give each idea its own clean paragraph
+   Do NOT wrap up paragraphs with summary sentences
+   DO follow this person's actual structure from the blueprint
 
-AI signal #2 — performing casualness without real content
-  "I mean" and "you know" without a real story behind them = still AI
+4. PRESERVE ALL CONTENT
+   Every idea and fact from the bullet points must appear.
+   Nothing added, nothing removed.
+
+5. SHORT WORDS OVER LONG ONES
+   "get" not "obtain" | "show" not "demonstrate"
+   "use" not "utilize" | "help" not "facilitate"
+   "need" not "require" | "try" not "attempt"
+
+${pushBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THIS PERSON'S FULL VOICE AND STRUCTURE BLUEPRINT
+CONTENT TO WRITE ABOUT (extracted meaning — build from these)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${rawBlueprint || "No blueprint yet — rely on the fingerprint above."}`;
+${bulletPoints}
+
+Now write it as this person. First word of your response = first word of the text.`
+  };
 }
 
 // ============================================================
-// REWRITE USER PROMPT — restructure + voice in one pass
-// Built from GPTZero's exact human vs AI breakdown:
-//
-// WHAT MAKES A SENTENCE HUMAN (GPTZero confirmed):
-// → Narrative Structure — intro that leads into a personal story
-// → Subjective Stance — "I've learned that the hard way"
-// → Personal Anecdote — a real specific memory as evidence
-// → Informal Persuasion — personal story used to make a point
-// → Distinct Personal Voice — opinion + informal language together
-//
-// WHAT MAKES A SENTENCE AI (GPTZero confirmed):
-// → Contrast Phrasing — "not just X, but Y" kills it EVERY TIME
-//   even when surrounded by casual language like "I mean" and "you know"
-// → Artificial Simplicity — performing casualness without real substance
-//   "I mean" without a real story behind it = still AI
-//
-// THE KEY LESSON: "I mean" and "you know" don't make writing human.
-// A REAL PERSONAL STORY embedded in the writing makes it human.
+// POST-PROCESSOR
+// Deterministic code cleanup after Groq writes.
+// Strips any remaining AI phrases and word choices.
+// Never touches meaning — only surface-level signals.
 // ============================================================
-function buildRewriteUserPrompt(text) {
-  return `Read the text below completely. Understand every idea, argument, and fact in it.
+function postProcess(text) {
+  let r = text;
 
-Now rewrite it in this person's voice AND structure. The text is probably written like a guide or explanation — linear, organized, each point leading cleanly to the next. That's ChatGPT's skeleton. You need to rebuild it the way this specific person actually thinks.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WHAT MAKES WRITING GENUINELY HUMAN (use these)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-→ PERSONAL STORIES — this is the #1 human signal GPTZero cannot fake.
-  A real specific memory woven into the writing. Not "people often feel X"
-  but "I remember when I was a kid and X happened." The more specific
-  the detail, the more human it registers. Use them wherever they fit.
-
-→ NARRATIVE STRUCTURE — instead of Point → Explanation → Point,
-  tell it like a story: here's what I noticed → here's why it matters
-  → here's what I learned from it. Humans think in stories, not outlines.
-
-→ SUBJECTIVE STANCE — statements like "I've learned that the hard way"
-  or "I didn't really get this until..." show real experience behind the opinion.
-  Not just "I think X is important" but WHY this person specifically thinks so.
-
-→ GENUINE UNCERTAINTY — "I guess", "I mean", "I'm not totally sure but..."
-  These work when they come WITH a real thought behind them, not alone.
-
-→ THIS PERSON'S STRUCTURE — use the blueprint to figure out how THEY
-  organize ideas. Do they front-load? Tell stories? Jump between points?
-  Mix opinions with facts? Match that pattern, not ChatGPT's pattern.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WHAT MAKES WRITING AI EVEN WHEN IT SOUNDS CASUAL (never do these)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-→ CONTRAST PHRASING — this is the #1 AI flag GPTZero catches every time,
-  even inside casual sentences. Never use these constructions:
-  "not just about X, but Y"
-  "not just X, but also Y"
-  "it's not just X, it's Y"
-  "they're not just X, they're Y"
-  "not about X, but about Y"
-  "more than just X"
-  These sound human but GPTZero catches them as AI every single time.
-  Instead just say the positive: "it's about X and Y" or "it's really about Y"
-
-→ ARTIFICIAL SIMPLICITY — "I mean" and "you know" without a real story
-  behind them. Performed casualness without actual content = still AI.
-
-→ LINEAR STRUCTURE — Topic sentence → 3 supporting points → conclusion.
-  This skeleton is AI even when the words sound casual.
-
-→ CLEAN WRAP-UPS — ending paragraphs with a tidy summary sentence.
-  Real people move on when they're done, they don't summarize.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PRESERVE: Every fact, idea, and argument stays. Restructure and rephrase — never cut content.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Output ONLY the rewritten text. No intro, no label. First word = first word of text.
-
-Text:\n\n${text}`;
-}
-
-// ============================================================
-// HUMANIZE USER PROMPT — second pass, more personal
-// ============================================================
-function buildHumanizeUserPrompt(text) {
-  return `This is written in this person's voice but GPTZero is still flagging parts of it. Fix the remaining AI signals.
-
-The two things GPTZero catches even in casual writing:
-
-1. CONTRAST PHRASING — scan for every instance of:
-   "not just X, but Y" / "not just about X, but about Y" / "it's not just X, it's Y"
-   "they're not just X, they're Y" / "more than just" / "not about X, but about Y"
-   Replace every single one. Just say the positive directly.
-   "not just about words, but about feelings" → "about words and feelings, really"
-   "it's not just information, it's emotion" → "it carries emotion just as much as information"
-
-2. MISSING PERSONAL STORY — find any paragraph that makes a point without
-   a specific personal detail. Add a brief real-feeling memory or specific moment.
-   Not generic ("people often feel this") but specific ("I remember when...").
-   Even one specific detail per paragraph changes the score dramatically.
-
-3. CLEAN WRAP-UPS — any sentence that neatly summarizes what just happened.
-   Break it, trail off, or just cut it and move on.
-
-Keep every fact and argument. Keep full depth and quality.
-Output ONLY the result. First word of response = first word of text.
-
-Text:\n\n${text}`;
-}
-
-
-// ============================================================
-// STEP 2 — POST-PROCESSOR
-// Pure code. Runs after Groq returns the voice rewrite.
-// Makes targeted surgical edits to fix GPTZero signals
-// WITHOUT touching the voice or meaning.
-//
-// This is deterministic — same input, same fixes, every time.
-// No prompting. No guessing. Just math.
-// ============================================================
-function postProcess(text, dna) {
-  let result = text;
-
-  // ---- 1. STRIP BANNED AI PHRASES ----
-  // These are instant flags regardless of everything else
-  const bannedPhrases = [
-    // ---- Classic AI transitions ----
+  // Banned transitions
+  const banned = [
     [/\bFurthermore,?\s*/gi, ""],
     [/\bMoreover,?\s*/gi, ""],
     [/\bAdditionally,?\s*/gi, ""],
@@ -567,7 +539,6 @@ function postProcess(text, dna) {
     [/\bTo summarize,?\s*/gi, ""],
     [/\bIn summary,?\s*/gi, ""],
     [/\bNotably,?\s*/gi, ""],
-    [/\bSignificantly,?\s*/gi, ""],
     [/\bSubsequently,?\s*/gi, ""],
     [/\bConsequently,?\s*/gi, "So "],
     [/\bHaving said that,?\s*/gi, "But "],
@@ -576,203 +547,89 @@ function postProcess(text, dna) {
     [/\bNeedless to say,?\s*/gi, ""],
     [/\bIt is worth noting( that)?,?\s*/gi, ""],
     [/\bIt is important to note( that)?,?\s*/gi, ""],
-    [/\bIt('s| is) crucial to( understand)?,?\s*/gi, ""],
     [/\bThis highlights\b/gi, "This shows"],
     [/\bThis demonstrates\b/gi, "This shows"],
     [/\bThis underscores\b/gi, "This shows"],
     [/\bThis illustrates\b/gi, "This shows"],
     [/\bThis suggests\b/gi, "This means"],
     [/\bone might argue\b/gi, "some people think"],
-    [/\bit could be argued\b/gi, "you could say"],
     [/\bplays a crucial role\b/gi, "matters a lot"],
-    [/\bplays an important role\b/gi, "matters"],
     [/\bAt the end of the day,?\s*/gi, ""],
     [/\bAll things considered,?\s*/gi, ""],
     [/\bFirst and foremost,?\s*/gi, "First, "],
     [/\bLast but not least,?\s*/gi, "And "],
-    [/\bThat's when I realized\b/gi, "That's when I got it —"],
-
-    // ---- CONTRAST PHRASING — #1 remaining AI flag ----
-    // GPTZero specifically flags "not just X, but Y" as AI
-    // These are the most common forms of this construction
-    [/\bnot just about ([^,]+), but (also )?about\b/gi, "about $1 and also"],
-    [/\bnot just ([^,]+), but (also )?([^.!?]+)/gi, "also $3, not just $1,"],
-    [/\bit's not just ([^,]+), (it's|they're|but) (also )?/gi, "it's "],
-    [/\bthey're not just ([^,]+), (they're|but) (also )?/gi, "they're "],
-    [/\bwords are not just\b/gi, "words are"],
-    [/\bit is not just\b/gi, "it's"],
-    [/\bnot just about\b/gi, "about"],
+    // Contrast phrasing — #1 AI flag
+    [/\bnot just about ([^,\.]+),?\s*but (also )?about\b/gi, "about $1 and"],
+    [/\bit'?s not just ([^,\.]+),?\s*(it'?s|but) (also )?/gi, "it's "],
+    [/\bthey'?re not just ([^,\.]+),?\s*(they'?re|but) (also )?/gi, "they're "],
+    [/\bnot just ([^,\.]{3,40}),?\s*but (also )?/gi, ""],
+    [/\bmore than just\b/gi, "really"],
     [/\bis more than just\b/gi, "is really"],
-    [/\bmore than just\b/gi, "actually"],
-
-    // ---- Clean summary sentence enders ----
-    // "Because of this, X is important/necessary/essential"
-    [/\bBecause of this,?\s*(it is|it's|they are|they're)\s+(important|necessary|essential|crucial|vital)\b/gi, "And that matters"],
-    [/\b(it is|it's)\s+(important|necessary|essential|crucial|vital)\s+to\b/gi, "you need to"],
-    [/\busing words thoughtfully isn't just important[^.]*\./gi, "words matter more than most people think."],
   ];
 
-  for (const [pattern, replacement] of bannedPhrases) {
-    result = result.replace(pattern, replacement);
-  }
+  for (const [p, rep] of banned) r = r.replace(p, rep);
 
-  // ---- 2. WORD SUBSTITUTIONS ----
-  // Replace long AI words with short human ones
-  // Only swaps whole words, preserves capitalization
-  const wordSwaps = [
-    ["utilize", "use"], ["utilizes", "uses"], ["utilized", "used"],
-    ["leverage", "use"], ["leverages", "uses"], ["leveraged", "used"],
-    ["facilitate", "help"], ["facilitates", "helps"], ["facilitated", "helped"],
-    ["demonstrate", "show"], ["demonstrates", "shows"], ["demonstrated", "showed"],
-    ["obtain", "get"], ["obtains", "gets"], ["obtained", "got"],
-    ["acquire", "get"], ["acquires", "gets"], ["acquired", "got"],
-    ["commence", "start"], ["commences", "starts"], ["commenced", "started"],
-    ["endeavor", "try"], ["endeavors", "tries"], ["endeavored", "tried"],
-    ["individuals", "people"], ["individual", "person"],
-    ["implement", "use"], ["implements", "uses"], ["implemented", "used"],
-    ["significant", "real"], ["significant", "big"],
-    ["substantial", "big"], ["considerable", "big"],
-    ["numerous", "many"], ["multiple", "many"],
-    ["assist", "help"], ["assists", "helps"], ["assisted", "helped"],
-    ["require", "need"], ["requires", "needs"], ["required", "needed"],
-    ["purchase", "buy"], ["purchases", "buys"], ["purchased", "bought"],
-    ["attempt", "try"], ["attempts", "tries"], ["attempted", "tried"],
-    ["pertaining to", "about"],
-    ["regarding", "about"],
-    ["in order to", "to"],
-    ["due to the fact that", "because"],
-    ["in the event that", "if"],
+  // Word swaps
+  const swaps = [
+    ["utilize","use"],["utilizes","uses"],["utilized","used"],
+    ["leverage","use"],["leverages","uses"],["leveraged","used"],
+    ["facilitate","help"],["facilitates","helps"],["facilitated","helped"],
+    ["demonstrate","show"],["demonstrates","shows"],["demonstrated","showed"],
+    ["obtain","get"],["obtains","gets"],["obtained","got"],
+    ["acquire","get"],["acquires","gets"],["acquired","got"],
+    ["commence","start"],["commences","starts"],["commenced","started"],
+    ["endeavor","try"],["endeavors","tries"],["endeavored","tried"],
+    ["individuals","people"],["individual","person"],
+    ["implement","use"],["implements","uses"],["implemented","used"],
+    ["substantial","big"],["considerable","big"],
+    ["numerous","many"],["multiple","many"],
+    ["assist","help"],["assists","helps"],["assisted","helped"],
+    ["require","need"],["requires","needs"],["required","needed"],
+    ["purchase","buy"],["purchases","buys"],["purchased","bought"],
+    ["attempt","try"],["attempts","tries"],["attempted","tried"],
+    ["pertaining to","about"],["regarding","about"],
+    ["in order to","to"],["due to the fact that","because"],
+    ["in the event that","if"],["at this point in time","now"],
+    ["in the near future","soon"],["a number of","some"],
+    ["the majority of","most"],["a significant amount","a lot"],
   ];
 
-  for (const [ai, human] of wordSwaps) {
-    const regex = new RegExp(`\\b${ai}\\b`, "gi");
-    result = result.replace(regex, (match) => {
-      // Preserve capitalization
-      if (match[0] === match[0].toUpperCase()) {
-        return human.charAt(0).toUpperCase() + human.slice(1);
-      }
-      return human;
-    });
+  for (const [ai, human] of swaps) {
+    const re = new RegExp(`\\b${ai.replace(/ /g, "\\s+")}\\b`, "gi");
+    r = r.replace(re, m => m[0] === m[0].toUpperCase() ? human[0].toUpperCase() + human.slice(1) : human);
   }
 
-  // ---- 3. BURSTINESS FIX ----
-  // Find consecutive sentences of similar length and break the pattern
-  // Split into sentences, check lengths, insert short punchy sentences
-  // where rhythm is too uniform
-  const sentenceRegex = /([^.!?]+[.!?]+)/g;
-  const sentences = result.match(sentenceRegex) || [result];
+  // Cleanup
+  r = r.replace(/\s{2,}/g, " ").replace(/\s+([.,!?])/g, "$1").trim();
+  r = r.replace(/([.!?]\s+)([a-z])/g, (m, p1, p2) => p1 + p2.toUpperCase());
 
-  if (sentences.length >= 3) {
-    const fixed = [];
-    for (let i = 0; i < sentences.length; i++) {
-      fixed.push(sentences[i]);
-
-      // Check if 3 consecutive sentences are all similar length
-      if (i >= 2) {
-        const lens = [
-          sentences[i-2].trim().split(/\s+/).length,
-          sentences[i-1].trim().split(/\s+/).length,
-          sentences[i].trim().split(/\s+/).length,
-        ];
-        const allSimilar = Math.max(...lens) - Math.min(...lens) < 6;
-        const allMedium = lens.every(l => l >= 10 && l <= 22);
-
-        // If 3 in a row are all medium length, flag — post-processor
-        // can't add content, but we track this for the humanize pass
-        if (allSimilar && allMedium) {
-          // Mark this location — the humanize pass will target it
-          // We can't add sentences without knowing the context,
-          // so we leave a soft signal in the output for now
-        }
-      }
-    }
-  }
-
-  // ---- 4. CLEAN UP ----
-  // Fix any double spaces or weird artifacts from replacements
-  result = result
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s+([.,!?])/g, "$1")
-    .replace(/^[\s,]+/, "")
-    .trim();
-
-  // Fix sentences that now start with lowercase after replacement
-  result = result.replace(/([.!?]\s+)([a-z])/g, (m, p1, p2) => p1 + p2.toUpperCase());
-
-  return result;
+  return r;
 }
 
 // ============================================================
-// GET /health — quick uptime check
+// GET /health
 // ============================================================
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", model: MODEL, groqKeySet: !!GROQ_API_KEY });
+  res.json({ status: "ok", model: MODEL, groqKeySet: !!GROQ_API_KEY, version: "10.0" });
 });
 
 // ============================================================
 // POST /analyze
-// Accepts: { samples: [{ label, text }] }
-// Returns: { blueprint: "<json string with dna + rawBlueprint>" }
 // ============================================================
 app.post("/analyze", async (req, res) => {
   try {
     const { samples } = req.body;
-    if (!samples || !samples.length) {
-      return res.status(400).json({ error: "No samples provided" });
-    }
+    if (!samples?.length) return res.status(400).json({ error: "No samples provided" });
 
-    // Step A: Extract hard metrics locally (instant, no API cost)
+    // Step A — local mathematical fingerprint
     const dna = extractStyleDNA(samples);
 
-    // Step B: Send samples to Groq for deep qualitative analysis
-    const samplesText = samples
-      .map((s, i) => `--- Sample ${i + 1}: ${s.label || "Untitled"} ---\n${s.text}`)
-      .join("\n\n");
+    // Step B — Groq qualitative analysis
+    const samplesText = samples.map((s, i) => `--- Sample ${i + 1}: ${s.label || "Untitled"} ---\n${s.text}`).join("\n\n");
+    const { system, user } = buildAnalysisPrompt(samplesText, dna);
+    const rawBlueprint = await callGroq(system, user, 2000, 0.7);
 
-    const systemPrompt = `You are a forensic writing analyst specializing in voice, structure, and thinking patterns. Extract how this person writes AND how they organize their ideas — both are equally important. Your job is to extract a writer's deep personality, creativity patterns, syntax habits, and emotional signature from their real writing samples — specifically the qualities that make writing feel genuinely human rather than AI-generated. Be extremely specific. Quote actual phrases as evidence. Output ONLY the sections requested.`;
-
-    const userPrompt = `Analyze these writing samples deeply. Output ONLY these sections:
-
-${samplesText}
-
-VOICE & PERSONALITY:
-What is this person's genuine voice — not their topic but HOW they think and express themselves? What makes them sound like a real human not an AI? Quote one phrase that captures their personality perfectly.
-
-THINKING STRUCTURE (critical — this is what AI detectors flag most):
-How does this person organize their ideas? Be extremely specific:
-- Do they front-load the point or build toward it?
-- Do they think linearly (A→B→C) or associatively (jumping between connected ideas)?
-- Do they mix their personal opinions in with facts, or keep them separate?
-- Do they use personal stories/memories as evidence or stay abstract?
-- Do they address the reader directly ("you should...") or write in third person?
-- How do they open a piece — with a statement, a question, mid-thought, a memory?
-- How do they close — clean conclusion, trailing off, abruptly, with a question?
-- Do they go on tangents? Do they self-correct mid-thought?
-Quote specific examples from the samples for each habit you identify.
-
-SYNTAX & RHYTHM PATTERNS:
-How do they vary sentence structure — not just length but TYPE? Do they use fragments? Questions they answer themselves? Sentences starting with "But" or "And"? Run-ons? Parenthetical asides? Repetition for emphasis? Quote the most distinctive examples.
-
-PERSONALITY & EMOTION:
-How does this person's actual personality show in their writing? Where do they admit uncertainty, show excitement, express frustration? Where does their voice feel most alive and least like a robot? Quote specific moments.
-
-NATURAL IMPERFECTIONS:
-What are the small human habits — "or something", "I mean", casual asides, sentences that run long, self-corrections? Quote real examples from the samples.
-
-WHAT THEY NEVER DO:
-What AI habits are completely absent? Be specific — never uses "Furthermore"? Never wraps paragraphs with a summary? Never uses passive voice? These negatives are just as important.
-
-THEIR TRANSITIONS:
-List the exact phrases this person uses to move between ideas. Not AI transitions — their actual words. Quote them directly from the samples.
-
-CLONING INSTRUCTIONS:
-Write 3 paragraphs to an AI that will imitate this person covering: (1) their voice and personality, (2) their STRUCTURE — how they organize thinking, because this is what AI detectors flag most, (3) the single most important thing to nail to avoid sounding like AI when writing as them.`;
-
-    const rawBlueprint = await callGroq(systemPrompt, userPrompt, 1500);
-
-    // Package hard metrics + qualitative analysis together
     const blueprint = JSON.stringify({ dna, rawBlueprint });
-
     res.json({ blueprint });
 
   } catch (err) {
@@ -782,37 +639,29 @@ Write 3 paragraphs to an AI that will imitate this person covering: (1) their vo
 });
 
 // ============================================================
-// POST /rewrite
-// Accepts: { text, blueprint }
-// Returns: { rewritten }
+// POST /rewrite — two-call reconstruction
 // ============================================================
 app.post("/rewrite", async (req, res) => {
   try {
     const { text, blueprint } = req.body;
-    if (!text || !blueprint) {
-      return res.status(400).json({ error: "Missing text or blueprint" });
-    }
+    if (!text || !blueprint) return res.status(400).json({ error: "Missing text or blueprint" });
 
-    // Parse blueprint — supports new JSON format and old string format
-    let dna = null;
-    let rawBlueprint = blueprint;
+    let dna = null, rawBlueprint = blueprint;
     try {
       const parsed = JSON.parse(blueprint);
-      if (parsed.dna && parsed.rawBlueprint) {
-        dna = parsed.dna;
-        rawBlueprint = parsed.rawBlueprint;
-      }
-    } catch (e) { /* old string format — use as-is */ }
+      if (parsed.dna && parsed.rawBlueprint) { dna = parsed.dna; rawBlueprint = parsed.rawBlueprint; }
+    } catch (e) {}
 
-    const systemPrompt = buildSystemPrompt(dna, rawBlueprint);
-    const userPrompt = buildRewriteUserPrompt(text);
+    // Call 1 — extract content as bullet points (strips AI skeleton)
+    const { system: extSys, user: extUser } = buildExtractionPrompt(text);
+    const bulletPoints = await callGroq(extSys, extUser, 800, 0.4);
 
-    // Step 1: Groq clones the voice — no detector rules, just voice
-    const voiceRewrite = await callGroq(systemPrompt, userPrompt, 1500, 1.0);
+    // Call 2 — reconstruct from bullet points in this person's voice
+    const { system: recSys, user: recUser } = buildReconstructionPrompt(bulletPoints, dna, rawBlueprint, false);
+    const voiceRewrite = await callGroq(recSys, recUser, 2000, 1.0);
 
-    // Step 2: Post-processor fixes detector signals without touching the voice
-    const rewritten = postProcess(voiceRewrite, dna);
-
+    // Post-process — strip any remaining AI signals
+    const rewritten = postProcess(voiceRewrite);
     res.json({ rewritten });
 
   } catch (err) {
@@ -822,37 +671,28 @@ app.post("/rewrite", async (req, res) => {
 });
 
 // ============================================================
-// POST /humanize
-// Same as /rewrite but pushes harder on human messiness
-// Accepts: { text, blueprint }
-// Returns: { rewritten }
+// POST /humanize — second pass, push harder
 // ============================================================
 app.post("/humanize", async (req, res) => {
   try {
     const { text, blueprint } = req.body;
-    if (!text || !blueprint) {
-      return res.status(400).json({ error: "Missing text or blueprint" });
-    }
+    if (!text || !blueprint) return res.status(400).json({ error: "Missing text or blueprint" });
 
-    let dna = null;
-    let rawBlueprint = blueprint;
+    let dna = null, rawBlueprint = blueprint;
     try {
       const parsed = JSON.parse(blueprint);
-      if (parsed.dna && parsed.rawBlueprint) {
-        dna = parsed.dna;
-        rawBlueprint = parsed.rawBlueprint;
-      }
-    } catch (e) { /* old string format */ }
+      if (parsed.dna && parsed.rawBlueprint) { dna = parsed.dna; rawBlueprint = parsed.rawBlueprint; }
+    } catch (e) {}
 
-    const systemPrompt = buildSystemPrompt(dna, rawBlueprint);
-    const userPrompt = buildHumanizeUserPrompt(text);
+    // Call 1 — extract content again cleanly
+    const { system: extSys, user: extUser } = buildExtractionPrompt(text);
+    const bulletPoints = await callGroq(extSys, extUser, 800, 0.4);
 
-    // Step 1: Groq makes it more natural/personal
-    const voiceRewrite = await callGroq(systemPrompt, userPrompt, 1500, 1.1);
+    // Call 2 — reconstruct with pushHarder = true
+    const { system: recSys, user: recUser } = buildReconstructionPrompt(bulletPoints, dna, rawBlueprint, true);
+    const voiceRewrite = await callGroq(recSys, recUser, 2000, 1.1);
 
-    // Step 2: Post-processor runs again on the second pass output
-    const rewritten = postProcess(voiceRewrite, dna);
-
+    const rewritten = postProcess(voiceRewrite);
     res.json({ rewritten });
 
   } catch (err) {
@@ -862,10 +702,10 @@ app.post("/humanize", async (req, res) => {
 });
 
 // ============================================================
-// START SERVER
+// START
 // ============================================================
 app.listen(PORT, () => {
-  console.log(`MyVoice server v4.0 running on port ${PORT}`);
-  if (!GROQ_API_KEY) console.warn("WARNING: GROQ_API_KEY is not set — all Groq calls will fail");
+  console.log(`MyVoice v10.0 running on port ${PORT}`);
+  if (!GROQ_API_KEY) console.warn("WARNING: GROQ_API_KEY not set");
 });
 
