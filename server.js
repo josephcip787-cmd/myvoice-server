@@ -330,43 +330,57 @@ MEASURED FINGERPRINT (for context — already calculated):
 ---
 
 VOICE & PERSONALITY:
-In 3-4 sentences describe this writer's exact personality as it comes through in writing. What makes them feel like a real specific person and not a generic writer? Quote one phrase that captures them perfectly.
+In 3-4 sentences describe this writer's exact personality as it comes through in writing. What makes them feel like a real specific person? What is their energy — are they casual, earnest, frustrated, enthusiastic, dry? Quote one phrase that captures them perfectly.
 
-THINKING STRUCTURE:
-How does this person organize their ideas? Be precise:
-- Linear (A→B→C) or associative (jumping between connected ideas)?
-- Do they state their point first then explain, or build toward it?
-- Do they mix opinion and fact together or keep them separate?
-- Do they follow the original topic or go on tangents?
-- How long are their paragraphs typically?
-Quote one example of their structural pattern from the samples.
+THINKING PATTERN (most important section):
+This is how this person's brain moves through a topic. Be extremely specific:
+- Do they think in stories (start with an experience, meaning emerges from it)?
+- Do they think associatively (jump between connected ideas, circle back)?
+- Do they think linearly (A leads to B leads to C)?
+- Do they state their point first then explain, or arrive at the point through the writing?
+- Do they go on tangents? Do they self-correct mid-thought?
+- Do they mix their own experience and opinion in with facts, or keep them separate?
+Quote one example that shows their thinking pattern in action.
+
+EMOTIONAL SIGNATURE:
+How does this person show they actually care about what they're writing? Be specific:
+- What emotions come through — frustration, excitement, pride, self-deprecation?
+- Do they express vulnerability or stay confident?
+- When they say "I think" or "I feel" — is it followed by a specific memory or a general observation?
+- What specific moments in the samples feel most emotionally real?
+Quote the most emotionally authentic sentence from their samples.
+
+SENTENCE CONSTRUCTION HABITS:
+The specific ways this person builds sentences — not length, but construction:
+- Do they use run-ons connected by "and" or "because"?
+- Do they use fragments for punch?
+- Do they interrupt themselves mid-sentence?
+- Do they repeat a word or phrase for emphasis?
+- Do they stack multiple clauses with commas?
+- Do they trail off with "or something" or "you know"?
+- Do they ask a question and immediately answer it?
+Quote 2-3 sentences that show their most distinctive construction habits.
 
 HOW THEY OPEN:
-How does this person start a piece or a new idea? Do they jump in mid-thought? Start with a personal memory? Ask a question? Make a bold statement? Quote an actual opening from their samples.
+Exactly how does this person start writing? Do they jump straight into a memory? Make a bold claim? Ask a question? Start mid-thought? Quote an actual opening from their samples.
 
 HOW THEY CLOSE:
-How does this person end a thought or a paragraph? Do they trail off? End abruptly? Wrap up cleanly? Ask a question? Quote an actual closing from their samples.
+Exactly how does this person end? Do they trail off? End abruptly with a short line? Ask a question? Give a piece of advice? Never use a generic "keep practicing" encouragement? Quote an actual closing.
 
 PERSONAL STORY PATTERN:
-Do they use personal memories and stories? If so — how? Do they name specific details (ages, people, places)? Do they drop into the story immediately or introduce it? How long are the stories? Quote an example.
-
-HUMOR & PERSONALITY QUIRKS:
-What is their humor style if any — dry, self-deprecating, absurd, none? What personality quirks show up consistently? Sarcasm? Hyperbole? Self-correction mid-thought? Quote examples.
-
-THEIR EXACT TRANSITIONS:
-List the exact words and phrases this person uses to move between ideas. Quote them directly from the samples. Do NOT list generic transitions — only ones that actually appear.
+Do they use personal memories? If yes — how specific do they get? Do they name people, places, ages? Do they drop into the story immediately or introduce it? How long do the stories run? Quote an example.
 
 WHAT THEY NEVER DO:
-List 5-8 specific writing habits that are completely absent. Be specific — not "they don't use formal language" but "they never use 'Furthermore' or 'Moreover', never end paragraphs with a summary sentence, never use passive voice."
+List 5-8 specific habits completely absent from their writing. Be precise — not "they avoid formal language" but "they never wrap up a paragraph with a summary sentence, never use 'Furthermore', never give generic encouragement at the end."
 
-OPINION STYLE:
-When they state an opinion, do they give reasons? Do they hedge ("I think maybe") or state confidently? Do they invite the reader to agree or just state their view? Quote an example.
+THEIR EXACT TRANSITIONS:
+Quote the actual words and phrases they use to move between ideas — directly from the samples. Only real ones that appear, not generic ones.
 
 CLONING INSTRUCTIONS:
-Write 4 paragraphs directly to the AI that will rewrite content as this person. Use "you should..." and "when writing as this person...". Cover:
-1. Their voice, personality, and energy — what makes every sentence sound like them
-2. Their structure — how they organize ideas, how they open, how they close
-3. Their personal story pattern — when and how to use specific memories
+Write 4 paragraphs directly to the AI that will write as this person. Use "when writing as this person..." Cover:
+1. Their voice, energy, and personality — what every sentence should feel like
+2. Their thinking pattern — how to structure ideas the way their brain actually moves
+3. Their emotional signature — how to make the writing feel genuinely theirs, not performed
 4. The single most important thing to get right, and the single biggest mistake to avoid`
   };
 }
@@ -395,128 +409,84 @@ Output format:
 
 // ============================================================
 // CALL 2 — RECONSTRUCTION PROMPT
-// Groq gets: bullet points (meaning) + full DNA + blueprint
-// Groq does NOT get: ChatGPT's original sentences
-// Result: built entirely from this person's writing patterns
+// Portrait-based approach — no checklists, no rules.
+// Groq gets a complete portrait of a real person and is told
+// to inhabit them. The profile is rich enough that writing
+// naturally comes out human — we don't fight the detector,
+// we make the detector irrelevant.
 // ============================================================
 function buildReconstructionPrompt(bulletPoints, dna, rawBlueprint, pushHarder = false) {
 
-  const fingerprint = `
+  const portrait = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-MATHEMATICAL FINGERPRINT — match these numbers precisely
+WHO THIS PERSON IS AS A WRITER
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SENTENCE RHYTHM:
-  Average length: ${dna.avgLen} words | Range: ${dna.minLen}–${dna.maxLen}
-  Short (≤8w): ${Math.round((dna.shortCount/dna.sentenceCount)*100)}% | Medium: ${Math.round((dna.medCount/dna.sentenceCount)*100)}% | Long (25+w): ${Math.round((dna.longCount/dna.sentenceCount)*100)}%
-  Avg change between consecutive sentences: ${dna.avgConsecDiff} words
-  Fragment rate: ${dna.fragmentRate}% | Run-on rate: ${dna.runOnRate}%
+${rawBlueprint || "Use the fingerprint below to construct this person's portrait."}
 
-SENTENCE OPENERS:
-  Starts with "I": ${dna.openerIRate}%
-  Starts with conjunction (But/And/So): ${dna.openerConjRate}%
-  Starts with clause (When/After/If): ${dna.openerClauseRate}%
-  Starts with filler (Well/I mean/Honestly): ${dna.openerFillerRate}%
-  Most common first word: "${dna.topOpener}"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THEIR MEASURED WRITING PATTERNS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Sentence rhythm: avg ${dna.avgLen} words, ranges ${dna.minLen}–${dna.maxLen}
+Short sentences (≤8w): ${Math.round((dna.shortCount/dna.sentenceCount)*100)}% | Long (25+w): ${Math.round((dna.longCount/dna.sentenceCount)*100)}%
+Consecutive sentence variance: ${dna.avgConsecDiff} words avg change
+Fragment rate: ${dna.fragmentRate}% | Run-on rate: ${dna.runOnRate}%
 
-VOCABULARY:
-  Avg word length: ${dna.avgWordLen} chars | Long words (8+ chars): ${dna.longWordRate}%
-  Casual words they use: ${dna.casualWords.slice(0,8).join(", ") || "standard"}
-  Contractions they use: ${dna.usedContractions.join(", ") || "few"}
-  Formality: ${dna.formalityScore}/100 | Warmth: ${dna.warmthScore}/100
+Sentence openers: "I" ${dna.openerIRate}% | Conjunction ${dna.openerConjRate}% | Clause ${dna.openerClauseRate}% | Filler ${dna.openerFillerRate}%
+Most common first word: "${dna.topOpener}"
 
-PUNCTUATION:
-  Exclamations: ${dna.exclamPerSentence}/sentence
-  Questions: ${dna.questionPerSentence}/sentence
-  Ellipsis: ${dna.ellipsisPerSentence}/sentence
-  Dashes: ${dna.dashPerSentence}/sentence
-  Commas: ${dna.commaPerSentence}/sentence
-  Semicolons total: ${dna.semicolonCount}
-  Parenthetical asides: ${dna.parenCount}
+Words: avg ${dna.avgWordLen} chars | Long words: ${dna.longWordRate}%
+Formality: ${dna.formalityScore}/100 | Warmth: ${dna.warmthScore}/100
+Contractions: ${dna.usedContractions.join(", ") || "few"}
+Casual words they use: ${dna.casualWords.slice(0,8).join(", ") || "standard"}
 
-PERSONALITY MARKERS:
-  Personal memories: ${dna.memoryCount} in samples
-  Opinion markers (I think/feel): ${dna.opinionCount}
-  Self-corrections (I mean/well/actually): ${dna.selfCorrectionCount}
-  Hedge rate: ${dna.hedgeRate}%
-  Direct reader address: ${dna.directAddressRate}%
+Punctuation: ${dna.exclamPerSentence} exclamations/sentence | ${dna.questionPerSentence} questions/sentence | ${dna.commaPerSentence} commas/sentence | ${dna.ellipsisPerSentence} ellipsis/sentence
 
-STRUCTURE:
-  Avg paragraph length: ${dna.avgParaLen} sentences
-  Opening style: ${dna.openingStyle}
-  Closing style: ${dna.closingStyle}
-
-TRANSITIONS THEY ACTUALLY USE:
-  ${dna.usedTransitions.join(", ") || "standard"}
-
-SIGNATURE WORDS (appear across multiple samples):
-  ${dna.signatureWords.join(", ") || "none detected"}`;
+Personal memories in samples: ${dna.memoryCount}
+Opinion markers: ${dna.opinionCount} | Self-corrections: ${dna.selfCorrectionCount}
+Avg paragraph length: ${dna.avgParaLen} sentences
+Opening style: ${dna.openingStyle}
+Closing style: ${dna.closingStyle}
+Transitions they actually use: ${dna.usedTransitions.join(", ") || "standard connectors"}
+Signature words: ${dna.signatureWords.join(", ") || "none detected"}`;
 
   const pushBlock = pushHarder ? `
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECOND PASS — push harder on these specifically
+SECOND PASS NOTE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The first version was close but still slightly AI. Fix:
-- Any sentence using "not just X, but Y" → rewrite it
-- Any paragraph ending with a clean summary → break it
-- Any point made without a personal angle → add one
-- Any two consecutive sentences of similar length → disrupt
-- Any formal word that has a shorter natural version → swap it` : "";
+This is a second attempt. The first version was close but
+felt slightly too clean in places. Push deeper into their
+voice — more of their actual personality, more of their
+specific way of thinking, less polished and more real.` : "";
 
   return {
-    system: `You are a writing style cloner. You reconstruct content in a specific human's exact writing voice. You have their complete mathematical fingerprint and qualitative profile. Your job is to write the given content exactly as THEY would have written it — matching every measurable and qualitative dimension of their writing. The output should be statistically indistinguishable from their real writing.
+    system: `You are an expert writing impersonator. You are given a complete portrait of a real human writer — their personality, their thinking patterns, their emotional signature, their sentence construction habits, their exact measured writing patterns. Your job is to fully inhabit this person and write the given content exactly as they would have written it themselves.
 
-Output ONLY the written text. No intro, no label, no explanation. First word of your response = first word of the text.`,
+This is not about following rules. It is about becoming this person for the duration of the writing. Read their portrait deeply, understand who they are, and then write as them — naturally, the way they would if they just sat down and started writing about this topic.
 
-    user: `Write the following content in this person's exact voice. You are not rewriting someone else's text — you are writing these ideas FROM SCRATCH as if this person just sat down and wrote about this topic themselves.
+Output ONLY the written text. No intro, no label, no explanation. The very first word you write is the first word of the piece.`,
 
-${fingerprint}
+    user: `Read this person's complete portrait carefully. Understand who they are — how their mind works, how they feel about things, how they construct sentences, what their voice sounds like. Then write the given content as them.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-QUALITATIVE VOICE & STRUCTURE BLUEPRINT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${rawBlueprint || "Use the fingerprint above as your guide."}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CRITICAL RULES — non-negotiable
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. PERSONAL STORIES ARE THE #1 HUMAN SIGNAL
-   Weave in at least one specific personal detail per paragraph.
-   A real memory, a specific moment, a named detail.
-   "I remember when..." or just drop into the story directly.
-   This is what GPTZero cannot flag — real specificity.
-
-2. CONTRAST PHRASING IS THE #1 AI SIGNAL — NEVER USE IT
-   Never write: "not just X, but Y"
-   Never write: "not just about X, but about Y"
-   Never write: "it's not just X, it's Y"
-   Never write: "more than just X"
-   Never write: "not about X, but about Y"
-   These get flagged every single time even in casual writing.
-   Instead say the positive directly: "it's about X and Y"
-
-3. DESTROY THE AI STRUCTURE
-   Do NOT write: topic sentence → explanation → conclusion
-   Do NOT give each idea its own clean paragraph
-   Do NOT wrap up paragraphs with summary sentences
-   DO follow this person's actual structure from the blueprint
-
-4. PRESERVE ALL CONTENT
-   Every idea and fact from the bullet points must appear.
-   Nothing added, nothing removed.
-
-5. SHORT WORDS OVER LONG ONES
-   "get" not "obtain" | "show" not "demonstrate"
-   "use" not "utilize" | "help" not "facilitate"
-   "need" not "require" | "try" not "attempt"
-
+${portrait}
 ${pushBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CONTENT TO WRITE ABOUT (extracted meaning — build from these)
+CONTENT TO WRITE (these are the ideas — write about them as this person)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${bulletPoints}
 
-Now write it as this person. First word of your response = first word of the text.`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BEFORE YOU WRITE — answer these internally:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. How would THIS person enter this topic — where would their brain go first?
+2. Would they tell a story about it or explain it directly?
+3. What do they personally feel about this topic based on their portrait?
+4. How would they end — would they trail off, land on a point, ask something?
+
+Now write it. Every sentence should feel like it came from that person's actual mind.
+Cover all the content from the bullet points — nothing missing, nothing added.
+First word of your response = first word of the piece.`
   };
 }
 
