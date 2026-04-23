@@ -386,23 +386,49 @@ Write 4 paragraphs directly to the AI that will write as this person. Use "when 
 }
 
 // ============================================================
-// CALL 1 — CONTENT EXTRACTION
-// Strips ChatGPT's skeleton completely.
-// Output: clean bullet points of just the meaning.
-// Groq never looks at these sentences again when rewriting.
+// CALL 1 — CONTENT EXTRACTION WITH TAGGING
+// Strips ChatGPT's skeleton AND scrambles its organizational
+// logic. Tags each piece of content by type so Groq knows
+// to mix them naturally rather than deliver them as advice.
+//
+// The AI skeleton isn't just in the sentences — it's in HOW
+// the content is organized. Practical advice → linear breakdown
+// → conclusion is ChatGPT's default structure. If we extract
+// bullet points in that order, Call 2 rebuilds the same skeleton.
+//
+// Solution: tag content by type (fact/experience/feeling/insight)
+// and explicitly scramble the order so Groq has to mix types
+// together rather than deliver them sequentially as a guide.
 // ============================================================
 function buildExtractionPrompt(text) {
   return {
-    system: `You are a content extractor. Your only job is to pull the core meaning out of a piece of writing — the facts, arguments, ideas, and logical relationships — and list them as clean bullet points. Strip ALL phrasing, structure, and wording. Just the meaning. Be complete — don't miss any ideas. Output ONLY the bullet points, nothing else.`,
+    system: `You are a content analyst. Your job is to extract every piece of meaning from a text and tag each one by its type. You completely ignore the original organization and order — you are breaking the content into raw ingredients that someone can use to cook something completely different.
 
-    user: `Extract every idea, fact, argument, and logical relationship from this text as bullet points. Strip all phrasing — just the raw meaning. Be complete.
+Output ONLY the tagged bullet points. Nothing else.`,
+
+    user: `Extract every idea, fact, argument, and piece of meaning from this text. Tag each one with its type. Completely ignore the original order and organization — scramble it. The goal is to break the content into raw ingredients with no structure.
+
+Tag types:
+[FACT] — an objective piece of information or how something works
+[FEELING] — an emotional experience, frustration, excitement, struggle
+[INSIGHT] — a realization, something learned, a deeper understanding
+[EXPERIENCE] — something that happens to a person, a moment, an event
+[OPINION] — a personal take or belief about something
+[DETAIL] — a specific concrete detail (number, name, technique, example)
+
+Rules:
+- Mix the types up — never list all facts together, all feelings together etc
+- Break multi-part points into separate tagged items
+- If something could be an experience or feeling, make it an experience
+- Ignore the original text's paragraph structure completely
+- Be complete — every idea must appear
 
 Text:
 ${text}
 
-Output format:
-• [idea/fact/argument]
-• [idea/fact/argument]
+Output format (mix the types, scramble the order):
+[TYPE] content
+[TYPE] content
 ...`
   };
 }
@@ -472,20 +498,38 @@ ${portrait}
 ${pushBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CONTENT TO WRITE (these are the ideas — write about them as this person)
+CONTENT INGREDIENTS (tagged by type — mix them together)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${bulletPoints}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HOW TO USE THESE INGREDIENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+These are raw ingredients — not an outline to follow.
+Do NOT deliver them in order. Do NOT group all facts together,
+all feelings together, all insights together.
+
+Mix the types the way a real person naturally mixes them:
+- A [FEELING] can introduce a [FACT]
+- An [EXPERIENCE] can lead into an [INSIGHT]
+- A [DETAIL] can appear inside a personal story
+- An [OPINION] can come right after a [FACT]
+
+Real human writing weaves experience, feeling, fact, and opinion
+together in the same paragraph. AI writing delivers each type
+separately in a logical sequence. This person's writing should
+feel like a real person thinking through this topic — their
+memories and feelings mixed in with what they know.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BEFORE YOU WRITE — answer these internally:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. How would THIS person enter this topic — where would their brain go first?
-2. Would they tell a story about it or explain it directly?
-3. What do they personally feel about this topic based on their portrait?
-4. How would they end — would they trail off, land on a point, ask something?
+1. Where would THIS person's brain enter this topic — what would they say first?
+2. What [FEELING] or [EXPERIENCE] ingredient would they lead with?
+3. How would their personal story carry the [FACT] and [DETAIL] ingredients naturally?
+4. How would they end — based on their closing style in the portrait?
 
-Now write it. Every sentence should feel like it came from that person's actual mind.
-Cover all the content from the bullet points — nothing missing, nothing added.
+Now write it as this person. Every ingredient must appear somewhere.
 First word of your response = first word of the piece.`
   };
 }
