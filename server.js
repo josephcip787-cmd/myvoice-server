@@ -248,6 +248,44 @@ function extractStyleDNA(samples) {
     .slice(0, 10)
     .map(([p]) => p);
 
+  // ---- Example sentences — real quotes showing syntax variety ----
+  // Actual sentences pulled from samples to show Groq exactly
+  // what this person's sentence construction looks like in practice.
+  // Numbers and descriptions don't show syntax — real examples do.
+  const longestRunOn = cleanSentences
+    .filter(s => (s.match(/,/g) || []).length >= 3)
+    .sort((a, b) => b.split(/\s+/).length - a.split(/\s+/).length)[0] || "";
+
+  const shortFragments = cleanSentences
+    .filter(s => s.split(/\s+/).length <= 6)
+    .slice(0, 3);
+
+  const personalSentences = cleanSentences
+    .filter(s => /^I\s/i.test(s) && /remember|recall|used to|was a kid|one time|my coach|my friend|my/i.test(s))
+    .slice(0, 3);
+
+  const conjunctionSentences = cleanSentences
+    .filter(s => /^(But|And|So|Because|Yet)\s/i.test(s))
+    .slice(0, 2);
+
+  const selfCorrectionSentences = cleanSentences
+    .filter(s => /\bI mean\b|\bwell,\b|\bactually\b|\bor something\b|\byou know\b/i.test(s))
+    .slice(0, 2);
+
+  const mostDistinctive = cleanSentences
+    .filter(s => /\bI\b/i.test(s) && s.split(/\s+/).length > 15 && s.split(/\s+/).length < 50)
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3);
+
+  const exampleSentences = {
+    longestRunOn,
+    shortFragments,
+    personalSentences,
+    conjunctionSentences,
+    selfCorrectionSentences,
+    mostDistinctive,
+  };
+
   return {
     // Rhythm
     avgLen, minLen, maxLen, shortCount, medCount, longCount,
@@ -296,6 +334,7 @@ function extractStyleDNA(samples) {
 
     // Signatures
     signatureWords, topPhrases,
+    exampleSentences,
   };
 }
 
@@ -443,6 +482,26 @@ Output format (mix the types, scramble the order):
 // ============================================================
 function buildReconstructionPrompt(bulletPoints, dna, rawBlueprint, pushHarder = false) {
 
+  // Build example sentences block from real samples
+  const ex = dna.exampleSentences || {};
+  const exampleBlock = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REAL EXAMPLE SENTENCES FROM THEIR WRITING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+These are actual sentences this person wrote. Study them.
+Your sentences should look and feel like these — not copies,
+but built the same way, with the same construction habits.
+
+${ex.longestRunOn ? `THEIR RUN-ON STYLE (comma-chain, long flowing thought):\n"${ex.longestRunOn}"\n` : ""}
+${ex.shortFragments?.length ? `THEIR SHORT PUNCHY LINES:\n${ex.shortFragments.map(s => `"${s}"`).join("\n")}\n` : ""}
+${ex.personalSentences?.length ? `THEIR PERSONAL MEMORY SENTENCES:\n${ex.personalSentences.map(s => `"${s}"`).join("\n")}\n` : ""}
+${ex.conjunctionSentences?.length ? `SENTENCES STARTING WITH CONJUNCTION:\n${ex.conjunctionSentences.map(s => `"${s}"`).join("\n")}\n` : ""}
+${ex.selfCorrectionSentences?.length ? `SELF-CORRECTION MID-SENTENCE:\n${ex.selfCorrectionSentences.map(s => `"${s}"`).join("\n")}\n` : ""}
+${ex.mostDistinctive?.length ? `MOST DISTINCTIVE SENTENCES (their voice at its clearest):\n${ex.mostDistinctive.map(s => `"${s}"`).join("\n")}\n` : ""}
+Mix these construction types throughout your writing.
+Never write three declarative sentences in a row.
+After every declarative sentence — vary the next one.`;
+
   const portrait = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 WHO THIS PERSON IS AS A WRITER
@@ -473,7 +532,9 @@ Avg paragraph length: ${dna.avgParaLen} sentences
 Opening style: ${dna.openingStyle}
 Closing style: ${dna.closingStyle}
 Transitions they actually use: ${dna.usedTransitions.join(", ") || "standard connectors"}
-Signature words: ${dna.signatureWords.join(", ") || "none detected"}`;
+Signature words: ${dna.signatureWords.join(", ") || "none detected"}
+
+${exampleBlock}`;
 
   const pushBlock = pushHarder ? `
 
