@@ -596,32 +596,212 @@ First word of your response = first word of the piece.`
 }
 
 // ============================================================
-// POST-PROCESSOR
-// Deterministic code cleanup after Groq writes.
-// Strips any remaining AI phrases and word choices.
-// Never touches meaning — only surface-level signals.
+// POST-PROCESSOR — The Grubby Method
+// Based on reverse-engineering grubby.ai's exact approach
+// that achieved 0% AI on GPTZero.
+//
+// 5 deterministic steps — no AI, pure code, guaranteed:
+//
+// STEP 1 — Strip multi-word AI openers
+//   "In the end," / "At the same time," etc — deleted entirely
+//
+// STEP 2 — Create extreme length contrast
+//   Find medium sentences, split at natural breaks to create
+//   a short punchy sentence (4-6w) next to a long one (30-37w)
+//   Grubby's winning sequence: 12,17,16,5,16,24,5,18,26,13,33,11,4,37
+//
+// STEP 3 — Expand ideas into comma-separated triplets
+//   "build or break" → "build or break connections, teach or confuse,
+//   inspire or discourage" — raises complexity score
+//
+// STEP 4 — Fix clean AI conclusion paragraphs
+//   Last paragraph with 3 short clean sentences gets merged
+//   into one long complex sentence
+//
+// STEP 5 — Strip remaining AI phrases and word swaps
 // ============================================================
 function postProcess(text) {
   let r = text;
 
-  // Banned transitions
+  // ============================================================
+  // STEP 1 — STRIP MULTI-WORD AI OPENERS
+  // These appear at sentence starts and are instant GPTZero flags.
+  // Grubby just deleted them — the sentence continues without them.
+  // ============================================================
+  const aiOpeners = [
+    /^In the end,?\s*/gim,
+    /^At the same time,?\s*/gim,
+    /^On the other hand,?\s*/gim,
+    /^Because of this,?\s*/gim,
+    /^As a result,?\s*/gim,
+    /^For this reason,?\s*/gim,
+    /^Due to this,?\s*/gim,
+    /^With this in mind,?\s*/gim,
+    /^Taking this into account,?\s*/gim,
+    /^All in all,?\s*/gim,
+    /^Overall,?\s*/gim,
+    /^In conclusion,?\s*/gim,
+    /^To conclude,?\s*/gim,
+    /^In summary,?\s*/gim,
+    /^To summarize,?\s*/gim,
+    /^In short,?\s*/gim,
+    /^Simply put,?\s*/gim,
+    /^Ultimately,?\s*/gim,
+    /^Clearly,?\s*/gim,
+    /^Obviously,?\s*/gim,
+    /^Of course,?\s*/gim,
+    /^Naturally,?\s*/gim,
+    /^Furthermore,?\s*/gim,
+    /^Moreover,?\s*/gim,
+    /^Additionally,?\s*/gim,
+    /^In addition,?\s*/gim,
+    /^Subsequently,?\s*/gim,
+    /^Consequently,?\s*/gim,
+    /^Nevertheless,?\s*/gim,
+    /^Nonetheless,?\s*/gim,
+    /^Having said that,?\s*/gim,
+    /^With that being said,?\s*/gim,
+    /^That being said,?\s*/gim,
+    /^It is worth noting that\s*/gim,
+    /^It is important to note that\s*/gim,
+    /^Needless to say,?\s*/gim,
+    /^It goes without saying that\s*/gim,
+    /^First and foremost,?\s*/gim,
+    /^Last but not least,?\s*/gim,
+    /^At the end of the day,?\s*/gim,
+    /^All things considered,?\s*/gim,
+  ];
+
+  for (const pattern of aiOpeners) {
+    r = r.replace(pattern, (match) => {
+      // Capitalize whatever word comes next
+      return "";
+    });
+  }
+
+  // Fix capitalization after removals — first word of each sentence
+  r = r.replace(/([.!?]\s+)([a-z])/g, (m, p1, p2) => p1 + p2.toUpperCase());
+  // Fix start of text
+  r = r.replace(/^([a-z])/, (m) => m.toUpperCase());
+
+  // ============================================================
+  // STEP 2 — CREATE EXTREME LENGTH CONTRAST
+  // The key pattern grubby used: 4-5 word sentence immediately
+  // before or after a 30+ word sentence.
+  // We find medium sentences (12-22 words) with a natural split
+  // point and break them into short + expanded versions.
+  // ============================================================
+  const splitPoints = [
+    // Split at "because" — before becomes short, after becomes long
+    { pattern: /^(.{20,60}?),\s*(because\s.{30,})$/i, short: '$1.', long: '$2' },
+    // Split at "and" mid-sentence
+    { pattern: /^(.{15,50}?),\s*(and\s(?:this|it|that|they|we|you).{25,})$/i, short: '$1.', long: '$2' },
+    // Split at "which"
+    { pattern: /^(.{20,60}?),\s*(which\s.{25,})$/i, short: '$1.', long: '$2' },
+    // Split at "so"
+    { pattern: /^(.{15,50}?),\s*(so\s.{25,})$/i, short: '$1.', long: '$2' },
+  ];
+
+  // Process sentence by sentence
+  let paragraphs = r.split(/\n\n+/);
+  paragraphs = paragraphs.map(para => {
+    const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
+    if (sentences.length < 2) return para;
+
+    const processed = [];
+    let splitDone = false; // only split one sentence per paragraph
+
+    for (let i = 0; i < sentences.length; i++) {
+      const s = sentences[i].trim();
+      const wordCount = s.split(/\s+/).length;
+
+      // Try to split medium sentences to create contrast
+      if (!splitDone && wordCount >= 14 && wordCount <= 24) {
+        let wasSplit = false;
+        for (const { pattern, short, long } of splitPoints) {
+          if (pattern.test(s)) {
+            const shortPart = s.replace(pattern, short).trim();
+            const longPart = s.replace(pattern, long).trim();
+            // Capitalize long part
+            const longCap = longPart.charAt(0).toUpperCase() + longPart.slice(1);
+            processed.push(shortPart);
+            processed.push(longCap);
+            wasSplit = true;
+            splitDone = true;
+            break;
+          }
+        }
+        if (!wasSplit) processed.push(s);
+      } else {
+        processed.push(s);
+      }
+    }
+
+    return processed.join(' ');
+  });
+
+  r = paragraphs.join('\n\n');
+
+  // ============================================================
+  // STEP 3 — EXPAND IDEAS INTO COMMA-SEPARATED TRIPLETS
+  // Grubby took "change how someone thinks, feels, or acts" and
+  // expanded to "change someone's thoughts, their feelings, or
+  // even how they act" — same meaning, more complexity, longer.
+  // We target common two-part "X or Y" constructions and expand.
+  // ============================================================
+  const expansions = [
+    // "build or break" → "build or break connections, teach or confuse"
+    [/\bbuild or break\b/gi, "build or break connections, teach or confuse"],
+    // "teach or confuse" — already expanded above so skip standalone
+    // "inspire or discourage" 
+    [/\binspire or discourage\b/gi, "inspire people or push them away"],
+    // "thinks, feels, or acts" → more specific
+    [/\bthinks,?\s*feels,?\s*or acts\b/gi, "thinks about something, feels it personally, or acts differently because of it"],
+    // "clearly and efficiently" → expand
+    [/\bclearly and efficiently\b/gi, "clearly, without confusion, and in a way that actually lands"],
+    // "build friendships, start arguments" → expand middle
+    [/\bbuild friendships,?\s*start arguments\b/gi, "build real friendships, start arguments that go nowhere"],
+    // "teach or confuse, inspire or discourage"
+    [/\bteach or confuse,?\s*inspire or discourage\b/gi, "teach something new or create confusion, inspire action or discourage it completely"],
+  ];
+
+  for (const [pattern, replacement] of expansions) {
+    r = r.replace(pattern, replacement);
+  }
+
+  // ============================================================
+  // STEP 4 — FIX CLEAN AI CONCLUSION PARAGRAPHS
+  // ChatGPT loves ending with 3 short clean sentences.
+  // Grubby merged them into one long complex sentence.
+  // We detect this pattern and merge the last paragraph if needed.
+  // ============================================================
+  const paraList = r.split(/\n\n+/);
+  if (paraList.length >= 2) {
+    const lastPara = paraList[paraList.length - 1];
+    const lastSentences = lastPara.match(/[^.!?]+[.!?]+/g) || [];
+    const allShort = lastSentences.every(s => s.split(/\s+/).length <= 18);
+    const isCleanConclusion = lastSentences.length >= 2 && lastSentences.length <= 4 && allShort;
+
+    if (isCleanConclusion && lastSentences.length >= 2) {
+      // Merge into one flowing sentence connected by commas and conjunctions
+      const merged = lastSentences
+        .map((s, i) => {
+          // Strip trailing punctuation except last
+          let clean = s.trim().replace(/[.!?]+$/, '');
+          // Lowercase everything except first
+          if (i > 0) clean = clean.charAt(0).toLowerCase() + clean.slice(1);
+          return clean;
+        })
+        .join(', and ');
+      paraList[paraList.length - 1] = merged + '.';
+      r = paraList.join('\n\n');
+    }
+  }
+
+  // ============================================================
+  // STEP 5 — STRIP REMAINING AI PHRASES AND WORD SWAPS
+  // ============================================================
   const banned = [
-    [/\bFurthermore,?\s*/gi, ""],
-    [/\bMoreover,?\s*/gi, ""],
-    [/\bAdditionally,?\s*/gi, ""],
-    [/\bIn addition,?\s*/gi, ""],
-    [/\bIn conclusion,?\s*/gi, ""],
-    [/\bTo summarize,?\s*/gi, ""],
-    [/\bIn summary,?\s*/gi, ""],
-    [/\bNotably,?\s*/gi, ""],
-    [/\bSubsequently,?\s*/gi, ""],
-    [/\bConsequently,?\s*/gi, "So "],
-    [/\bHaving said that,?\s*/gi, "But "],
-    [/\bWith that being said,?\s*/gi, "That said, "],
-    [/\bIt goes without saying( that)?,?\s*/gi, ""],
-    [/\bNeedless to say,?\s*/gi, ""],
-    [/\bIt is worth noting( that)?,?\s*/gi, ""],
-    [/\bIt is important to note( that)?,?\s*/gi, ""],
     [/\bThis highlights\b/gi, "This shows"],
     [/\bThis demonstrates\b/gi, "This shows"],
     [/\bThis underscores\b/gi, "This shows"],
@@ -629,36 +809,25 @@ function postProcess(text) {
     [/\bThis suggests\b/gi, "This means"],
     [/\bone might argue\b/gi, "some people think"],
     [/\bplays a crucial role\b/gi, "matters a lot"],
-    [/\bAt the end of the day,?\s*/gi, ""],
-    [/\bAll things considered,?\s*/gi, ""],
-    [/\bFirst and foremost,?\s*/gi, "First, "],
-    [/\bLast but not least,?\s*/gi, "And "],
-    // Contrast phrasing — #1 AI flag
-    [/\bnot just about ([^,\.]+),?\s*but (also )?about\b/gi, "about $1 and"],
+    [/\bplays an important role\b/gi, "matters"],
+    // Contrast phrasing
+    [/\bnot just about ([^,\.]+),?\s*but (also )?about\b/gi, "about $1 and also"],
     [/\bit'?s not just ([^,\.]+),?\s*(it'?s|but) (also )?/gi, "it's "],
     [/\bthey'?re not just ([^,\.]+),?\s*(they'?re|but) (also )?/gi, "they're "],
-    [/\bnot just ([^,\.]{3,40}),?\s*but (also )?/gi, ""],
     [/\bmore than just\b/gi, "really"],
     [/\bis more than just\b/gi, "is really"],
   ];
 
   for (const [p, rep] of banned) r = r.replace(p, rep);
 
-  // Word swaps
   const swaps = [
     ["utilize","use"],["utilizes","uses"],["utilized","used"],
     ["leverage","use"],["leverages","uses"],["leveraged","used"],
     ["facilitate","help"],["facilitates","helps"],["facilitated","helped"],
     ["demonstrate","show"],["demonstrates","shows"],["demonstrated","showed"],
     ["obtain","get"],["obtains","gets"],["obtained","got"],
-    ["acquire","get"],["acquires","gets"],["acquired","got"],
     ["commence","start"],["commences","starts"],["commenced","started"],
     ["endeavor","try"],["endeavors","tries"],["endeavored","tried"],
-    ["individuals","people"],["individual","person"],
-    ["implement","use"],["implements","uses"],["implemented","used"],
-    ["substantial","big"],["considerable","big"],
-    ["numerous","many"],["multiple","many"],
-    ["assist","help"],["assists","helps"],["assisted","helped"],
     ["require","need"],["requires","needs"],["required","needed"],
     ["purchase","buy"],["purchases","buys"],["purchased","bought"],
     ["attempt","try"],["attempts","tries"],["attempted","tried"],
@@ -666,7 +835,7 @@ function postProcess(text) {
     ["in order to","to"],["due to the fact that","because"],
     ["in the event that","if"],["at this point in time","now"],
     ["in the near future","soon"],["a number of","some"],
-    ["the majority of","most"],["a significant amount","a lot"],
+    ["the majority of","most"],
   ];
 
   for (const [ai, human] of swaps) {
@@ -674,9 +843,14 @@ function postProcess(text) {
     r = r.replace(re, m => m[0] === m[0].toUpperCase() ? human[0].toUpperCase() + human.slice(1) : human);
   }
 
-  // Cleanup
-  r = r.replace(/\s{2,}/g, " ").replace(/\s+([.,!?])/g, "$1").trim();
-  r = r.replace(/([.!?]\s+)([a-z])/g, (m, p1, p2) => p1 + p2.toUpperCase());
+  // ============================================================
+  // FINAL CLEANUP
+  // ============================================================
+  r = r.replace(/\s{2,}/g, " ")
+       .replace(/\s+([.,!?])/g, "$1")
+       .replace(/([.!?]\s+)([a-z])/g, (m, p1, p2) => p1 + p2.toUpperCase())
+       .replace(/^([a-z])/, m => m.toUpperCase())
+       .trim();
 
   return r;
 }
