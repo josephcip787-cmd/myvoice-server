@@ -1,20 +1,7 @@
 // ============================================================
-// MyVoice for ChatGPT — Backend Server v11.0
-// Clean rebuild. Two Groq calls + regex cleanup.
-//
-// PIPELINE:
-// 1. POST /analyze  — deep analysis of writing samples
-//    A) Local code extracts mathematical fingerprint
-//    B) Groq extracts qualitative voice profile
-//
-// 2. POST /rewrite  — two Groq calls
-//    Call 1: Voice clone — reword ChatGPT's text in person's style
-//    Call 2: Grubby pipeline — humanize the voice clone
-//    Final:  Regex cleanup — strip remaining AI openers
-//
-// 3. POST /humanize — same pipeline, pushed harder
-//
-// 4. GET  /health   — uptime check
+// MyVoice for ChatGPT — Backend Server v11.1
+// Base: v11.0 (the one that got 5 human sentences)
+// Fix: conjunctions starting sentences + over-conversational tone
 // ============================================================
 
 const express = require("express");
@@ -29,9 +16,6 @@ const MODEL = "llama-3.3-70b-versatile";
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
-// ============================================================
-// GROQ API CALL
-// ============================================================
 async function callGroq(systemPrompt, userPrompt, maxTokens = 2000, temperature = 0.9) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
@@ -79,10 +63,6 @@ async function callGroq(systemPrompt, userPrompt, maxTokens = 2000, temperature 
   });
 }
 
-// ============================================================
-// LOCAL STYLE DNA
-// Pure JavaScript. No API. Instant. Mathematical.
-// ============================================================
 function extractStyleDNA(samples) {
   const allText = samples.map(s => s.text).join("\n\n");
   const paragraphs = allText.split(/\n\n+/).filter(p => p.trim().length > 10);
@@ -92,7 +72,6 @@ function extractStyleDNA(samples) {
   const sc = Math.max(cleanSentences.length, 1);
   const wc = Math.max(words.length, 1);
 
-  // Sentence lengths
   const lengths = cleanSentences.map(s => s.split(/\s+/).length);
   const avgLen = Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
   const minLen = Math.min(...lengths);
@@ -104,12 +83,10 @@ function extractStyleDNA(samples) {
   const runOnCount = cleanSentences.filter(s => (s.match(/,/g) || []).length >= 4).length;
   const runOnRate = Math.round((runOnCount / sc) * 100);
 
-  // Consecutive variance
   let consecDiff = 0;
   for (let i = 1; i < lengths.length; i++) consecDiff += Math.abs(lengths[i] - lengths[i-1]);
   const avgConsecDiff = lengths.length > 1 ? Math.round(consecDiff / (lengths.length - 1)) : 0;
 
-  // Sentence openers
   const openerI = cleanSentences.filter(s => /^I\s/i.test(s)).length;
   const openerConj = cleanSentences.filter(s => /^(But|And|So|Because|Yet|Or)\s/i.test(s)).length;
   const openerClause = cleanSentences.filter(s => /^(When|After|Before|While|Once|If|Since|Although|Though|As)\s/i.test(s)).length;
@@ -123,14 +100,12 @@ function extractStyleDNA(samples) {
   });
   const topOpener = Object.entries(firstWords).sort((a, b) => b[1] - a[1])[0]?.[0] || "i";
 
-  // Transitions
   const transitionList = ["so","but","and","because","then","though","although","which means","that's why","this is why","the thing is","i mean","you know","honestly","actually","basically","like","anyway","still","also","plus","well","i guess","i think","i feel","i remember","and so","but then","so then","and then","but also"];
   const usedTransitions = transitionList.filter(t => {
     const re = new RegExp(`\\b${t.replace(/\s/g, "\\s")}\\b`, "gi");
     return (allText.match(re) || []).length >= 2;
   });
 
-  // Vocabulary
   const avgWordLen = Math.round(words.reduce((a, w) => a + w.length, 0) / wc);
   const longWordRate = Math.round((words.filter(w => w.length > 8).length / wc) * 100);
   const uniqueWords = new Set(words);
@@ -147,7 +122,6 @@ function extractStyleDNA(samples) {
   const contractionCount = (allText.match(/\b\w+'\w+\b/g) || []).length;
   const contractionRate = Math.round((contractionCount / wc) * 100);
 
-  // Punctuation
   const exclamations = (allText.match(/!/g) || []).length;
   const questions = (allText.match(/\?/g) || []).length;
   const ellipses = (allText.match(/\.\.\./g) || []).length;
@@ -156,7 +130,6 @@ function extractStyleDNA(samples) {
   const semicolons = (allText.match(/;/g) || []).length;
   const parens = (allText.match(/\(/g) || []).length;
 
-  // Tone
   const hedgeWords = (allText.match(/\b(maybe|perhaps|probably|possibly|might|could|i think|i feel|i guess|sort of|kind of|somewhat|a bit)\b/gi) || []).length;
   const opinionWords = (allText.match(/\b(i think|i feel|i believe|i know|i guess|in my opinion|for me|to me|personally)\b/gi) || []).length;
   const memoryWords = (allText.match(/\b(i remember|i recall|back when|one time|when i was|i used to|i once|growing up)\b/gi) || []).length;
@@ -169,11 +142,9 @@ function extractStyleDNA(samples) {
   formalityScore = Math.max(0, Math.min(100, Math.round(formalityScore)));
   const warmthScore = Math.min(100, Math.round(((emotionWords + personalPronouns) / wc) * 200));
 
-  // Paragraph style
   const paraLengths = paragraphs.map(p => (p.match(/[^.!?]+[.!?]+/g) || []).length);
   const avgParaLen = paraLengths.length ? Math.round(paraLengths.reduce((a, b) => a + b, 0) / paraLengths.length) : 3;
 
-  // Opening/closing
   const firstSentence = cleanSentences[0] || "";
   const lastSentence = cleanSentences[cleanSentences.length - 1] || "";
   const openingStyle =
@@ -189,7 +160,6 @@ function extractStyleDNA(samples) {
     /\.\.\.$/.test(lastSentence.trim()) ? "trails off with ellipsis" :
     "ends with a complete thought";
 
-  // Signature words
   const stopwords = new Set(["the","a","an","and","or","but","in","on","at","to","for","of","with","is","are","was","were","be","been","being","have","has","had","do","does","did","will","would","could","should","may","might","can","i","you","he","she","it","we","they","me","him","her","us","them","my","your","his","its","our","their","this","that","these","those","what","which","who","when","where","why","how","all","each","not","no","so","if","as","by","from","up","about","than","then","just","also","there","here","very","more","some","any","only","out","into","get","got","go","going","one","like","know","think","feel","time","way","make","take","come","see","look","want","back","still","even","well","new","good","old","right","big","really","much","many","same","own","too","now","after","before","never","always","every","both","few","most","other","once"]);
   const sampleWordSets = samples.map(s => new Set((s.text.toLowerCase().match(/\b[a-z']+\b/g) || [])));
   const wordFreq = {};
@@ -201,7 +171,6 @@ function extractStyleDNA(samples) {
     .slice(0, 15)
     .map(([w]) => w);
 
-  // Recurring phrases
   const phraseFreq = {};
   for (let i = 0; i < words.length - 2; i++) {
     const [w1, w2, w3] = [words[i], words[i+1], words[i+2]];
@@ -218,10 +187,7 @@ function extractStyleDNA(samples) {
     .slice(0, 8)
     .map(([p]) => p);
 
-  // Example sentences
-  const longestRunOn = cleanSentences
-    .filter(s => (s.match(/,/g) || []).length >= 3)
-    .sort((a, b) => b.split(/\s+/).length - a.split(/\s+/).length)[0] || "";
+  const longestRunOn = cleanSentences.filter(s => (s.match(/,/g) || []).length >= 3).sort((a, b) => b.split(/\s+/).length - a.split(/\s+/).length)[0] || "";
   const shortFragments = cleanSentences.filter(s => s.split(/\s+/).length <= 6).slice(0, 3);
   const personalSentences = cleanSentences.filter(s => /^I\s/i.test(s) && /remember|recall|used to|one time|my coach|my friend|my/i.test(s)).slice(0, 3);
   const conjunctionSentences = cleanSentences.filter(s => /^(But|And|So|Because|Yet)\s/i.test(s)).slice(0, 2);
@@ -236,10 +202,9 @@ function extractStyleDNA(samples) {
     openerClauseRate: Math.round((openerClause/sc)*100),
     openerFillerRate: Math.round((openerFiller/sc)*100),
     openerQuestionRate: Math.round((openerQuestion/sc)*100),
-    topOpener,
-    usedTransitions,
+    topOpener, usedTransitions,
     avgWordLen, longWordRate, vocabRichness,
-    casualWords, formalWords: formalWords,
+    casualWords, formalWords,
     usedContractions: usedContractions.slice(0, 10), contractionRate,
     exclamPerSentence: parseFloat((exclamations/sc).toFixed(2)),
     questionPerSentence: parseFloat((questions/sc).toFixed(2)),
@@ -259,15 +224,10 @@ function extractStyleDNA(samples) {
   };
 }
 
-// ============================================================
-// GROQ ANALYSIS PROMPT
-// Qualitative profile — what code can't measure
-// ============================================================
 function buildAnalysisPrompt(samplesText, dna) {
   const ex = dna.exampleSentences;
   return {
     system: `You are a forensic writing analyst. Study real writing samples and produce an extremely precise profile that another AI can use to perfectly clone this person's voice. Every observation must be specific and grounded in actual evidence. Quote real phrases. Be forensic, not generic.`,
-
     user: `Study these writing samples and produce a complete writer profile. Output ONLY the sections below.
 
 ${samplesText}
@@ -291,43 +251,34 @@ ${ex.mostDistinctive?.length ? `- Most distinctive: ${ex.mostDistinctive.map(s =
 ---
 
 VOICE & PERSONALITY:
-Describe this writer's exact personality in 3 sentences. What energy do they have — casual, earnest, dry, enthusiastic? Quote one phrase that captures them perfectly.
+Describe this writer's exact personality in 3 sentences. What energy do they have? Quote one phrase that captures them perfectly.
 
 VOCABULARY FINGERPRINT:
-What words does this person actually use that are distinctly theirs? What formal words do they never use? What casual words appear constantly? Be specific — list actual words from the samples.
+What words are distinctly theirs? What formal words do they never use? What casual words appear constantly?
 
 SENTENCE CONSTRUCTION:
-How do they build sentences? Run-ons connected by "and" or "because"? Fragments for punch? Self-interruptions mid-sentence? Comma stacking? Quote 2 actual examples showing their most distinctive construction.
+How do they build sentences? Run-ons? Fragments? Self-interruptions? Quote 2 actual examples.
 
 THINKING PATTERN:
-Do they think linearly or jump between ideas? Do they state the point first or build to it? Do they mix opinion and fact? Quote one example showing their thinking pattern.
+Linear or associative? Point first or build to it? Mix opinion and fact? Quote one example.
 
 PERSONAL STORY PATTERN:
-Do they use personal memories? How specific — named people, ages, places? Do they drop into stories or introduce them? Quote an example.
+Do they use personal memories? How specific? Quote an example.
 
 WHAT THEY NEVER DO:
-List 5 specific habits completely absent. E.g. "never wraps paragraphs with summary sentences, never uses Furthermore, never uses passive voice."
+List 5 specific absent habits.
 
 THEIR TRANSITIONS:
-Quote the exact words/phrases they use to connect ideas — only real ones from the samples.
+Quote exact transition words/phrases from the samples only.
 
 HOW THEY OPEN AND CLOSE:
-Quote an actual opening and closing from their samples.
+Quote an actual opening and closing.
 
 CLONING INSTRUCTIONS:
-Write 3 paragraphs to the AI that will rewrite as this person. Cover:
-1. Their vocabulary and word choice — what words they use, what they never use
-2. Their sentence construction — exactly how they build sentences
-3. The single most important thing to nail and the biggest mistake to avoid`
+3 paragraphs to the AI that will rewrite as this person covering: vocabulary, sentence construction, most important thing to nail.`
   };
 }
 
-// ============================================================
-// CALL 1 — VOICE CLONE PROMPT
-// One job: reword ChatGPT's text in this person's vocabulary
-// and style. Keep all facts. Keep the structure. Just change
-// the wording to match how this person actually talks and writes.
-// ============================================================
 function buildVoiceClonePrompt(text, dna, rawBlueprint) {
   const ex = dna?.exampleSentences || {};
 
@@ -335,174 +286,143 @@ function buildVoiceClonePrompt(text, dna, rawBlueprint) {
 THEIR MEASURED WRITING PATTERNS:
 - Sentence length: avg ${dna.avgLen} words, range ${dna.minLen}–${dna.maxLen}
 - Starts with "I": ${dna.openerIRate}% | Conjunctions: ${dna.openerConjRate}% | Fillers: ${dna.openerFillerRate}%
-- Formality: ${dna.formalityScore}/100 (${dna.formalityScore < 40 ? "very casual" : dna.formalityScore < 60 ? "conversational" : "formal"})
+- Formality: ${dna.formalityScore}/100
 - Contractions they use: ${dna.usedContractions.join(", ") || "few"}
 - Casual words they use: ${dna.casualWords.slice(0,10).join(", ") || "standard"}
 - Commas/sentence: ${dna.commaPerSentence} | Run-ons: ${dna.runOnRate}%
-- Personal memories: ${dna.memoryCount} instances | Self-corrections: ${dna.selfCorrectionCount}
+- Personal memories: ${dna.memoryCount} | Self-corrections: ${dna.selfCorrectionCount}
 - Their transitions: ${dna.usedTransitions.slice(0,10).join(", ") || "standard"}
 - Signature words: ${dna.signatureWords.join(", ") || "none"}
-${ex.longestRunOn ? `\nEXAMPLE of their run-on style:\n"${ex.longestRunOn}"` : ""}
-${ex.shortFragments?.length ? `\nEXAMPLE of their short punchy lines:\n${ex.shortFragments.map(s => `"${s}"`).join("\n")}` : ""}
-${ex.personalSentences?.length ? `\nEXAMPLE of their personal sentences:\n${ex.personalSentences.map(s => `"${s}"`).join("\n")}` : ""}
-${ex.mostDistinctive?.length ? `\nMOST DISTINCTIVE sentences (their voice at its clearest):\n${ex.mostDistinctive.map(s => `"${s}"`).join("\n")}` : ""}` : "";
+${ex.longestRunOn ? `\nEXAMPLE run-on style:\n"${ex.longestRunOn}"` : ""}
+${ex.shortFragments?.length ? `\nEXAMPLE short lines:\n${ex.shortFragments.map(s => `"${s}"`).join("\n")}` : ""}
+${ex.personalSentences?.length ? `\nEXAMPLE personal sentences:\n${ex.personalSentences.map(s => `"${s}"`).join("\n")}` : ""}
+${ex.mostDistinctive?.length ? `\nMOST DISTINCTIVE sentences:\n${ex.mostDistinctive.map(s => `"${s}"`).join("\n")}` : ""}` : "";
 
   return {
-    system: `You are a writing style cloner. Your only job is to reword text in a specific person's vocabulary and style. You keep all the facts, all the content, all the structure — you only change the wording to match how this person actually writes and talks.
+    system: `You are a writing style cloner. Reword text in a specific person's vocabulary and style. Keep all facts, all content, all structure — only change the wording to match how this person writes.
 
-Output ONLY the reworded text. No intro, no label. First word of your response = first word of the text.`,
+Output ONLY the reworded text. No intro, no label. First word = first word of text.`,
 
     user: `Reword the text below so it sounds like this specific person wrote it.
-
 Keep everything: all facts, all ideas, all paragraphs, same order. Only change the wording.
 
 ${fingerprintBlock}
 
 THEIR VOICE PROFILE:
-${rawBlueprint || "Use the fingerprint above to guide the voice."}
+${rawBlueprint || "Use the fingerprint above."}
 
 HOW TO REWORD:
 - Swap formal/AI words for what this person would actually say
-- Use their casual words, their contractions, their fillers
-- Match their sentence construction from the examples above
-- If they use run-ons — let sentences run. If they use fragments — use fragments.
-- Use "I think", "I feel", "I remember" where it fits naturally — but not in every sentence
-- Replace formal openers like "In the end," "At the same time," with how they actually connect ideas
-- Match their casual words and contractions — but don't overload every sentence with fillers like "like", "you know", "I mean". GPTZero flags heavy filler use as "Artificial Simplicity". Use them the way this person does — naturally and occasionally, not constantly
-- Keep the meaning exactly the same — just say it their way
+- Use their contractions and casual vocabulary
+- Match their sentence construction from the examples
+- If they use run-ons — let sentences run. If they use fragments — use them.
+- Use "I think", "I feel", "I remember" where it fits naturally
+- Replace AI openers like "In the end," "At the same time," with their actual transitions
+
+CRITICAL — CONJUNCTION RULE:
+Do NOT start sentences with "And,", "But,", "So," as standalone openers.
+GPTZero flags "Artificial Simplicity" when sentences start with conjunctions repeatedly.
+Instead, use conjunctions MID-SENTENCE: "Words are small, but they carry real weight"
+NOT: "But words carry real weight."
+Maximum ONE conjunction sentence opener in the entire piece.
+
+CRITICAL — CONVERSATIONAL BALANCE:
+Match this person's natural tone — don't make it MORE casual than their samples show.
+Fillers like "like", "you know", "I mean" should appear at the same rate as their samples.
+Do not inject extra casual markers beyond what their fingerprint shows.
 
 Text to reword:
 ${text}`
   };
 }
 
-// ============================================================
-// CALL 2 — GRUBBY PIPELINE PROMPT
-// Takes the voice clone and humanizes it using grubby's exact
-// pipeline: identify AI patterns → lexical substitution →
-// syntactic variation → stylistic noise → punctuation cleanup
-// ============================================================
 function buildGrubbyPrompt(text, pushHarder = false) {
-  const intensity = pushHarder ? "very aggressively" : "thoroughly";
-
   return {
-    system: `You are an AI text humanizer. You take text that may still have AI statistical patterns and transform it so it reads as genuinely human — raising perplexity and burstiness, injecting natural human style, and removing AI fingerprints. You preserve all meaning while transforming the statistical properties of the text.
+    system: `You are an AI text humanizer. Transform text to read as genuinely human — raising perplexity and burstiness, injecting natural human style, removing AI fingerprints. Preserve all meaning.
 
 Output ONLY the humanized text. No intro, no label. First word = first word of text.`,
 
-    user: `Humanize this text ${intensity} using this exact pipeline. Work through each step in order.
+    user: `Humanize this text using the grubby pipeline. Work through each step.
 
 STEP 1 — IDENTIFY AI PATTERNS:
-Before changing anything, mentally flag:
-- Sentences that are too similar in length (uniform cadence)
-- Formal or AI-typical words that survived the voice clone
-- Clean summary sentences that wrap up paragraphs too neatly
-- Sentence openers that still sound like AI transitions
-- Missing contractions where a real person would use them
+Flag: uniform sentence lengths, formal AI words, clean summary sentences, AI transition openers, missing contractions.
 
 STEP 2 — LEXICAL SUBSTITUTION (raise perplexity):
-Replace AI-prone words with casual human alternatives throughout.
-These specific words are AI fingerprints — replace every one you find:
-"accelerated" → "sped up" | "sophisticated" → "complex" or "tricky"
-"leverage" → "use" | "demonstrate" → "show" | "utilize" → "use"
-"significant" → "big" or "real" | "obtain" → "get"
-"frequently" → "often" or "a lot" | "individuals" → "people"
-"communicate" → "talk" or "say" | "comprehend" → "understand"
-"subsequently" → "then" or "after that" | "implement" → "use"
-"sufficient" → "enough" | "attempt" → "try" | "require" → "need"
-"provide" → "give" | "assist" → "help" | "purchase" → "buy"
-"numerous" → "a lot of" | "substantial" → "big" | "regarding" → "about"
-"additionally" → delete or use "also" | "furthermore" → delete
-"it is important to note" → delete | "it is worth noting" → delete
-"in conclusion" → delete | "to summarize" → delete
-"at the same time" → "but" or delete
-"in the end" → delete | "on the other hand" → "but"
-"as a result" → "so" | "therefore" → "so" | "thus" → "so"
-"however" → "but" | "nevertheless" → "but still"
-"in addition" → "also" or delete | "moreover" → delete
-Also replace ANY word that feels formal, academic, or robotic with what a real person would say.
+Replace every AI-prone word with a casual human alternative:
+"accelerated"→"sped up" | "sophisticated"→"complex" | "leverage"→"use"
+"demonstrate"→"show" | "utilize"→"use" | "significant"→"big" or "real"
+"obtain"→"get" | "frequently"→"often" | "individuals"→"people"
+"communicate"→"talk" | "comprehend"→"understand" | "subsequently"→"then"
+"implement"→"use" | "sufficient"→"enough" | "attempt"→"try"
+"require"→"need" | "provide"→"give" | "assist"→"help" | "purchase"→"buy"
+"numerous"→"a lot of" | "substantial"→"big" | "regarding"→"about"
+"additionally"→"also" or delete | "furthermore"→delete | "moreover"→delete
+"it is important to note"→delete | "in conclusion"→delete
+"at the same time"→"but" | "in the end"→delete | "on the other hand"→"but"
+"as a result"→"so" | "therefore"→"so" | "thus"→"so" | "however"→"but"
+"in addition"→"also" | "nevertheless"→"but still"
+Replace ANY formal/robotic word with what a real person would say.
 
 STEP 3 — SYNTACTIC VARIATION (raise burstiness):
-Mix sentence lengths aggressively — this is the #1 thing GPTZero measures.
-- Find paragraphs where sentences are similar length — disrupt them
-- After a long sentence (20+ words), add a short punchy one (4-7 words)
-- After a short sentence, let the next one run long and winding
-- Split one medium sentence per paragraph into short + long at a natural break point like "because", "which", "and this", "so"
-- Merge the final paragraph if it has 3+ short clean sentences — combine into one long flowing sentence
-- Target sentence length sequence: something like 14, 5, 22, 8, 31, 6, 19, 4, 28
+Mix sentence lengths aggressively:
+- Find paragraphs with uniform sentence lengths — disrupt them
+- After a long sentence (20+ words), add a short one (4-7 words)
+- After a short sentence, let the next run long
+- Split one medium sentence per paragraph at a natural break ("because", "which", "so")
+- Merge the final paragraph if it has 3+ short clean sentences into one long flowing one
+- Target: varied sequence like 14, 5, 22, 8, 31, 6, 19, 4, 28
 
-STEP 4 — STYLISTIC NOISE (inject human markers):
-Add natural human style — but sparingly. Less is more here.
-- Add contractions wherever missing: "it is" → "it's", "they are" → "they're", "do not" → "don't", "I am" → "I'm", "would not" → "wouldn't", "cannot" → "can't", "that is" → "that's", "there is" → "there's"
-- Strip ALL em-dashes (—) — replace with a comma or just remove
-- FILLERS — use maximum ONE per paragraph, and only where it fits completely naturally. Do NOT add "like", "you know", "I mean", "honestly" to every sentence. GPTZero flags heavy filler use as "Artificial Simplicity" — performed casualness. One filler per paragraph is enough. If a paragraph already has a filler word, add none.
-- Do NOT start sentences with "So, like," or "And, I mean," — these get flagged as Artificial Simplicity even though they sound casual
-- A single "honestly" or "actually" mid-sentence is fine — just not in every sentence
+STEP 4 — STYLISTIC NOISE (inject human markers — carefully):
+- Add contractions everywhere natural: "it is"→"it's", "they are"→"they're", "do not"→"don't", "I am"→"I'm", "would not"→"wouldn't", "cannot"→"can't", "that is"→"that's", "there is"→"there's"
+- Strip ALL em-dashes (—) — replace with comma or remove
+- Fillers: embed naturally MID-SENTENCE not at sentence starts. "words are, honestly, more powerful than people think" not "Honestly, words are powerful"
+- NEVER start sentences with "So, like," or "And, I mean," or "But, you know," — GPTZero flags these as Artificial Simplicity
+- NEVER end sentences with "you know?" — embed mid-sentence instead
+- Maximum 1-2 filler words per paragraph, placed naturally mid-sentence
 
 STEP 5 — PUNCTUATION NORMALIZATION:
-- Remove em-dashes — replace with comma or rewrite the clause
-- Replace semicolons with periods or commas where natural
-- Make sure contractions are used consistently
-- Remove any overly formal punctuation patterns
-
-PRESERVE: Every fact, idea, and argument from the original. Nothing added, nothing removed.
+- Remove em-dashes → comma or nothing
+- Semicolons → period or comma
+- Keep contractions consistent
+- Remove formal punctuation patterns
 
 ${pushHarder ? `
-PUSH HARDER NOTE:
-This is a second pass. The first version still had AI patterns. Be more aggressive:
-- Find every sentence that still sounds clean and AI-polished — break it
-- Find every formal word that survived — replace it
-- Create more extreme length contrast — shorter shorts, longer longs
-- Add more contractions and fillers` : ""}
+PUSH HARDER:
+Second pass — be more aggressive:
+- Break every sentence that still sounds AI-polished
+- Replace every formal word that survived
+- More extreme length contrast
+- More contractions throughout` : ""}
 
-Text to humanize:
+PRESERVE: Every fact, idea, argument. Nothing added, nothing removed.
+
+Text:
 ${text}`
   };
 }
 
-// ============================================================
-// REGEX CLEANUP
-// Final pass — strips any remaining AI openers that
-// survived both Groq calls. Pure deterministic code.
-// ============================================================
 function regexCleanup(text) {
   let r = text;
 
-  // Strip AI sentence openers
   const openers = [
-    /^In the end,?\s*/gim,
-    /^At the same time,?\s*/gim,
-    /^On the other hand,?\s*/gim,
-    /^Because of this,?\s*/gim,
-    /^As a result,?\s*/gim,
-    /^For this reason,?\s*/gim,
-    /^With this in mind,?\s*/gim,
-    /^All in all,?\s*/gim,
-    /^Overall,?\s*/gim,
-    /^In conclusion,?\s*/gim,
-    /^To conclude,?\s*/gim,
-    /^In summary,?\s*/gim,
-    /^To summarize,?\s*/gim,
-    /^Ultimately,?\s*/gim,
-    /^Furthermore,?\s*/gim,
-    /^Moreover,?\s*/gim,
-    /^Additionally,?\s*/gim,
-    /^Subsequently,?\s*/gim,
-    /^Consequently,?\s*/gim,
-    /^Nevertheless,?\s*/gim,
-    /^Having said that,?\s*/gim,
-    /^That being said,?\s*/gim,
-    /^It is worth noting that\s*/gim,
-    /^Needless to say,?\s*/gim,
-    /^First and foremost,?\s*/gim,
-    /^Last but not least,?\s*/gim,
-    /^At the end of the day,?\s*/gim,
-    /^All things considered,?\s*/gim,
+    /^In the end,?\s*/gim, /^At the same time,?\s*/gim,
+    /^On the other hand,?\s*/gim, /^Because of this,?\s*/gim,
+    /^As a result,?\s*/gim, /^For this reason,?\s*/gim,
+    /^With this in mind,?\s*/gim, /^All in all,?\s*/gim,
+    /^Overall,?\s*/gim, /^In conclusion,?\s*/gim,
+    /^To conclude,?\s*/gim, /^In summary,?\s*/gim,
+    /^To summarize,?\s*/gim, /^Ultimately,?\s*/gim,
+    /^Furthermore,?\s*/gim, /^Moreover,?\s*/gim,
+    /^Additionally,?\s*/gim, /^Subsequently,?\s*/gim,
+    /^Consequently,?\s*/gim, /^Nevertheless,?\s*/gim,
+    /^Having said that,?\s*/gim, /^That being said,?\s*/gim,
+    /^It is worth noting that\s*/gim, /^Needless to say,?\s*/gim,
+    /^First and foremost,?\s*/gim, /^Last but not least,?\s*/gim,
+    /^At the end of the day,?\s*/gim, /^All things considered,?\s*/gim,
   ];
 
   for (const p of openers) r = r.replace(p, "");
 
-  // Fix remaining AI phrases
   const fixes = [
     [/\bThis highlights\b/gi, "This shows"],
     [/\bThis demonstrates\b/gi, "This shows"],
@@ -515,7 +435,9 @@ function regexCleanup(text) {
 
   for (const [p, rep] of fixes) r = r.replace(p, rep);
 
-  // Fix capitalization
+  // Fix sentences starting with conjunctions — move conjunction mid-sentence
+  // "And words are powerful." → "Words are, and they're powerful."
+  // Actually just capitalize cleanly after removals
   r = r
     .replace(/\s{2,}/g, " ")
     .replace(/\s+([.,!?])/g, "$1")
@@ -526,16 +448,10 @@ function regexCleanup(text) {
   return r;
 }
 
-// ============================================================
-// GET /health
-// ============================================================
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", model: MODEL, groqKeySet: !!GROQ_API_KEY, version: "11.0" });
+  res.json({ status: "ok", model: MODEL, groqKeySet: !!GROQ_API_KEY, version: "11.1" });
 });
 
-// ============================================================
-// POST /analyze
-// ============================================================
 app.post("/analyze", async (req, res) => {
   try {
     const { samples } = req.body;
@@ -553,12 +469,6 @@ app.post("/analyze", async (req, res) => {
   }
 });
 
-// ============================================================
-// POST /rewrite
-// Call 1: Voice clone — reword in person's style
-// Call 2: Grubby pipeline — humanize statistically
-// Final:  Regex cleanup
-// ============================================================
 app.post("/rewrite", async (req, res) => {
   try {
     const { text, blueprint } = req.body;
@@ -570,15 +480,12 @@ app.post("/rewrite", async (req, res) => {
       if (parsed.dna && parsed.rawBlueprint) { dna = parsed.dna; rawBlueprint = parsed.rawBlueprint; }
     } catch (e) {}
 
-    // Call 1 — Voice clone
     const { system: vs, user: vu } = buildVoiceClonePrompt(text, dna, rawBlueprint);
     const voiceClone = await callGroq(vs, vu, 2000, 0.9);
 
-    // Call 2 — Grubby humanization
     const { system: gs, user: gu } = buildGrubbyPrompt(voiceClone, false);
     const humanized = await callGroq(gs, gu, 2000, 1.0);
 
-    // Final regex cleanup
     const rewritten = regexCleanup(humanized);
     res.json({ rewritten });
   } catch (err) {
@@ -587,9 +494,6 @@ app.post("/rewrite", async (req, res) => {
   }
 });
 
-// ============================================================
-// POST /humanize — second pass, pushed harder
-// ============================================================
 app.post("/humanize", async (req, res) => {
   try {
     const { text, blueprint } = req.body;
@@ -601,11 +505,9 @@ app.post("/humanize", async (req, res) => {
       if (parsed.dna && parsed.rawBlueprint) { dna = parsed.dna; rawBlueprint = parsed.rawBlueprint; }
     } catch (e) {}
 
-    // Call 1 — Voice clone again on the already-rewritten text
     const { system: vs, user: vu } = buildVoiceClonePrompt(text, dna, rawBlueprint);
     const voiceClone = await callGroq(vs, vu, 2000, 1.0);
 
-    // Call 2 — Grubby pushed harder
     const { system: gs, user: gu } = buildGrubbyPrompt(voiceClone, true);
     const humanized = await callGroq(gs, gu, 2000, 1.1);
 
@@ -617,11 +519,8 @@ app.post("/humanize", async (req, res) => {
   }
 });
 
-// ============================================================
-// START
-// ============================================================
 app.listen(PORT, () => {
-  console.log(`MyVoice v11.0 running on port ${PORT}`);
+  console.log(`MyVoice v11.1 running on port ${PORT}`);
   if (!GROQ_API_KEY) console.warn("WARNING: GROQ_API_KEY not set");
 });
 
