@@ -366,8 +366,9 @@ HOW TO REWORD:
 - Use their casual words, their contractions, their fillers
 - Match their sentence construction from the examples above
 - If they use run-ons — let sentences run. If they use fragments — use fragments.
-- Use "I think", "I feel", "I remember" where it fits naturally
+- Use "I think", "I feel", "I remember" where it fits naturally — but not in every sentence
 - Replace formal openers like "In the end," "At the same time," with how they actually connect ideas
+- Match their casual words and contractions — but don't overload every sentence with fillers like "like", "you know", "I mean". GPTZero flags heavy filler use as "Artificial Simplicity". Use them the way this person does — naturally and occasionally, not constantly
 - Keep the meaning exactly the same — just say it their way
 
 Text to reword:
@@ -431,12 +432,12 @@ Mix sentence lengths aggressively — this is the #1 thing GPTZero measures.
 - Target sentence length sequence: something like 14, 5, 22, 8, 31, 6, 19, 4, 28
 
 STEP 4 — STYLISTIC NOISE (inject human markers):
-Add natural human style throughout:
+Add natural human style — but sparingly. Less is more here.
 - Add contractions wherever missing: "it is" → "it's", "they are" → "they're", "do not" → "don't", "I am" → "I'm", "would not" → "wouldn't", "cannot" → "can't", "that is" → "that's", "there is" → "there's"
 - Strip ALL em-dashes (—) — replace with a comma or just remove
-- Add occasional human fillers at natural points: "honestly", "you know", "I mean", "actually", "kind of", "sort of" — use sparingly, 1-2 per paragraph max
-- Where a sentence starts with "This is" or "That is" — consider starting with "And honestly," or "I mean," instead
-- Let one sentence per paragraph start with "And" or "But" for punch
+- FILLERS — use maximum ONE per paragraph, and only where it fits completely naturally. Do NOT add "like", "you know", "I mean", "honestly" to every sentence. GPTZero flags heavy filler use as "Artificial Simplicity" — performed casualness. One filler per paragraph is enough. If a paragraph already has a filler word, add none.
+- Do NOT start sentences with "So, like," or "And, I mean," — these get flagged as Artificial Simplicity even though they sound casual
+- A single "honestly" or "actually" mid-sentence is fine — just not in every sentence
 
 STEP 5 — PUNCTUATION NORMALIZATION:
 - Remove em-dashes — replace with comma or rewrite the clause
