@@ -411,17 +411,17 @@ app.post("/analyze", async (req, res) => {
     const ex = dna.exampleSentences;
 
     const analysisPrompt = {
-      system: `You are a forensic writing analyst. Study real writing samples and produce an extremely precise voice profile that another AI can use to write as this person. Quote real phrases. Be specific and forensic.`,
-      user: `Study these writing samples and extract a complete writer profile. Output ONLY the sections below.
+      system: `You are a writing mechanics analyst. You study HOW someone writes — their sentence construction, vocabulary level, rhythm, tone, punctuation habits — NOT what they write about. You completely ignore the topics, stories, people, and content in the samples. You only care about the mechanical and stylistic patterns of the writing itself.`,
+      user: `Analyze ONLY the writing mechanics in these samples. Completely ignore what the samples are about — the topics, stories, people mentioned, and content are irrelevant. Only analyze HOW the sentences are built and HOW this person writes.
 
 ${samplesText}
 
 ---
-MEASURED FINGERPRINT:
+MEASURED FINGERPRINT (already calculated from the text):
 - Avg sentence: ${dna.avgLen} words | Range: ${dna.minLen}–${dna.maxLen}
-- Starts with "I": ${dna.openerIRate}% | Conjunction: ${dna.openerConjRate}%
+- Starts with "I": ${dna.openerIRate}% | Conjunction starters: ${dna.openerConjRate}%
 - Formality: ${dna.formalityScore}/100 | Warmth: ${dna.warmthScore}/100
-- Contractions: ${dna.usedContractions.join(", ") || "few"}
+- Contractions used: ${dna.usedContractions.join(", ") || "few"}
 - Casual words: ${dna.casualWords.slice(0,8).join(", ") || "standard"}
 - Run-on rate: ${dna.runOnRate}% | Fragment rate: ${dna.fragmentRate}%
 - Personal memories: ${dna.memoryCount} | Self-corrections: ${dna.selfCorrectionCount}
@@ -431,35 +431,31 @@ ${ex.personalSentences?.length ? `- Personal sentences: ${ex.personalSentences.m
 ${ex.mostDistinctive?.length ? `- Most distinctive: ${ex.mostDistinctive.map(s => `"${s}"`).join(" | ")}` : ""}
 ---
 
-VOICE & PERSONALITY:
-3 sentences. What is their energy — casual, earnest, dry, enthusiastic? Quote one phrase that captures them perfectly.
+CRITICAL RULE: Do NOT mention any specific topics, people, places, or stories from the samples. If a sample mentions a grandpa, a sport, a school, a friend — ignore it completely. Only describe the mechanical writing patterns.
 
-VOCABULARY:
-What words are distinctly theirs? What formal words do they never use? What casual words appear constantly?
+VOCABULARY LEVEL:
+What level of vocabulary does this person use? Simple everyday words or complex ones? Do they use slang, casual words, contractions heavily? What words appear constantly that reveal their vocabulary level? Give examples of their actual word choices (not topic-specific nouns — words like "like", "honestly", "kinda", "stuff", "a lot").
 
 SENTENCE CONSTRUCTION:
-How do they build sentences? Run-ons? Fragments? Self-interruptions? Quote 2 actual examples.
+How do they actually build sentences? Short and choppy? Long run-ons? Do they connect thoughts with "and" and "because"? Use fragments? Self-correct mid-sentence with "I mean" or "well"? Quote 3 actual sentence examples that show their construction style — strip out any topic-specific details and replace with [topic].
 
-THINKING PATTERN:
-Linear or associative? Point first or build to it? Quote one example.
+FORMALITY & TONE:
+How formal or informal is this writing? Casual like texting a friend? Somewhere in the middle? What specific patterns show this — contractions, slang, sentence structure? Is the tone confident, uncertain, enthusiastic, flat?
 
-PERSONAL STORY PATTERN:
-Do they use personal memories? How specific? Quote an example.
+RHYTHM & FLOW:
+How does the writing flow? Is it punchy and fast? Does it ramble? Does the writer repeat themselves? Do sentences vary a lot in length or stay similar? 
 
-WHAT THEY NEVER DO:
-5 specific absent habits.
+WHAT THIS PERSON NEVER DOES (mechanics only):
+What writing mechanics are completely absent? Do they never use semicolons? Never write long formal sentences? Never use words like "furthermore" or "however"? Be specific about mechanical habits that are absent.
 
-THEIR TRANSITIONS:
-Exact transition words from their samples only.
+THEIR CONNECTORS & TRANSITIONS:
+What words do they actually use to connect ideas? Not formal transitions — their real ones. "like", "so", "because", "I mean", "and", "but"? Quote real examples from the samples.
 
-OPENING AND CLOSING:
-Quote actual opening and closing.
-
-WRITING INSTRUCTIONS:
-3 paragraphs to the AI writing as this person:
-1. Their vocabulary — what to use, what to never use
-2. Their sentence construction — exactly how they build sentences
-3. Single most important thing to nail + biggest mistake to avoid`
+WRITING INSTRUCTIONS FOR AI (mechanics only):
+Write 3 paragraphs telling an AI exactly how to write AS THIS PERSON mechanically:
+1. Vocabulary — the exact level and type of words to use, with examples of words to use and words to never use
+2. Sentence construction — exactly how to build sentences the way this person does, with examples
+3. Tone and rhythm — the overall feel and energy of the writing, and the single most important mechanical habit to copy`
     };
 
     const rawBlueprint = await callGroq(analysisPrompt.system, analysisPrompt.user, 2000, 0.7);
